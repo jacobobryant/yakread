@@ -12,12 +12,9 @@ else
 fi
 TRENCH_FILE=trenchman_${TRENCH_VERSION}_linux_${ARCH}.tar.gz
 
-echo waiting for apt to finish
-while (ps aux | grep [a]pt); do
-  sleep 3
-done
-
 # Dependencies
+echo Running \`apt-get update\`. If this fails, you may need to way a few seconds for a background \
+     \`apt\` \ command to finish.
 apt-get update
 apt-get upgrade
 apt-get -y install default-jre rlwrap ufw git snapd
@@ -45,48 +42,45 @@ EOD
 }
 sudo -u app bash -c "$(declare -f set_up_app); set_up_app"
 
-# Systemd services
-cat > /etc/systemd/system/app.service << EOD
+make_service() {
+  name="$1"
+  file="/etc/systemd/system/$name.service"
+  cat > "$file" << EOD
 [Unit]
-Description=app
+Description=$name
 StartLimitIntervalSec=500
 StartLimitBurst=5
 
 [Service]
-User=app
 Restart=on-failure
 RestartSec=5s
+EOD
+  cat >> "$file"
+  cat >> "$file" << EOD
+
+[Install]
+WantedBy=multi-user.target
+EOD
+  systemctl enable "$name"
+}
+
+make_service app << EOD
+User=app
 Environment="BIFF_PROFILE=$BIFF_PROFILE"
 WorkingDirectory=/home/app
 ExecStart=/bin/sh -c "mkdir -p target/resources; clj -M:prod"
-
-[Install]
-WantedBy=multi-user.target
 EOD
-systemctl enable app
 
-cat > /etc/systemd/system/startup.service << EOD
-[Unit]
-Description=system startup commands
-StartLimitIntervalSec=500
-StartLimitBurst=5
-
-[Service]
-Restart=on-failure
-RestartSec=5s
+make_service route-smtp << EOD
 ExecStart=iptables -A PREROUTING -t nat -p tcp --dport 25 -j REDIRECT --to-port 2525
-
-[Install]
-WantedBy=multi-user.target
 EOD
-systemctl enable startup
-systemctl start startup
 
 cat > /etc/systemd/journald.conf << EOD
 [Journal]
 Storage=persistent
 EOD
 systemctl restart systemd-journald
+
 cat > /etc/sudoers.d/restart-app << EOD
 app ALL= NOPASSWD: /bin/systemctl reset-failed app.service
 app ALL= NOPASSWD: /bin/systemctl restart app
@@ -97,54 +91,32 @@ chmod 440 /etc/sudoers.d/restart-app
 
 # Firewall
 ufw allow OpenSSH
+ufw allow http
+ufw allow https
 ufw --force enable
 
-# Web dependencies
-apt-get -y install nginx
-snap install core
-snap refresh core
-snap install --classic certbot
-ln -s /snap/bin/certbot /usr/bin/certbot
-
-# Nginx
-rm /etc/nginx/sites-enabled/default
-cat > /etc/nginx/sites-available/app << EOD
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-    root /home/app/target/resources/public;
-    location / {
-        try_files \$uri \$uri/index.html @resources;
-    }
-    location @resources {
-        root /home/app/resources/public;
-        try_files \$uri \$uri/index.html @proxy;
-    }
-    location @proxy {
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "Upgrade";
-        proxy_set_header X-Real-IP \$remote_addr;
-    }
+# Web server
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+read -p "Enter your app's domain name (e.g. example.com): " BIFF_DOMAIN
+cat > /etc/caddy/Caddyfile << EOD
+$BIFF_DOMAIN {
+    encode gzip
+    reverse_proxy localhost:8080
 }
 EOD
-ln -s /etc/nginx/sites-{available,enabled}/app
-
-# Firewall
-ufw allow "Nginx Full"
-
-# Let's encrypt
-certbot --nginx
+systemctl reload caddy
+ufw allow "Caddy Full"
 
 # App dependencies
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt-get -y install nodejs zip
-ufw allow 25
-ufw allow 2525
+ufw allow smtp
 
 # fail2ban:
 # apt install fail2ban
@@ -155,3 +127,6 @@ ufw allow 2525
 #   .*client: <HOST>,.*
 #
 # systemctl enable fail2ban; systemctl start fail2ban
+
+systemctl start app
+systemctl start route-smtp
