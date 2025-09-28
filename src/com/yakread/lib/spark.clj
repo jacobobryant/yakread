@@ -24,6 +24,7 @@
          (q db
             '{:find [(pull direct-item [:xt/id :item/url])]
               :in [approved]
+              :timeout 999999
               :where [[direct-item :item.direct/candidate-status approved]]}
             :approved))})
 
@@ -200,37 +201,18 @@
         _ (log/info "training ALS")
         als (when (not-empty all-ratings)
               (ALS/trainImplicit spark-ratings rank iterations lambda alpha))
-        _ (log/info "computing baselines")
-        baselines (-> (into {} (when als
-                                 (.. als
-                                     (recommendUsersForProducts (count user->index))
-                                     (map (AverageRating.)
-                                          (.apply ClassTag$/MODULE$ clojure.lang.PersistentVector))
-                                     (collect))))
-                      (update-keys index->candidate))
-        item-candidate-ids (into #{} (map :xt/id) item-candidates)
-        ad-candidate-ids (into #{} (map :xt/id) all-ads)
-        type->median-score (as-> baselines $
-                             (group-by (fn [[candidate-id _]]
-                                         (cond
-                                           (item-candidate-ids candidate-id) :item
-                                           (ad-candidate-ids candidate-id) :ad))
-                                       $)
-                             (update-vals $ #(or (median (sort (mapv val %))) 0.5)))]
+        _ (log/info "done training ALS")]
     {::predict-fn (fn [user-id]
                     (let [candidate->score
-                          (if-some [user-idx (user->index user-id)]
-                            (into {}
-                                  (map (fn [^Rating rating]
-                                         [(index->candidate (.product rating))
-                                          (.rating rating)]))
-                                  (when als
-                                    (.recommendProducts als user-idx (count index->candidate))))
-                            baselines)]
+                          (into {}
+                                (map (fn [^Rating rating]
+                                       [(index->candidate (.product rating))
+                                        (.rating rating)]))
+                                (when-let [user-idx (and als (user->index user-id))]
+                                  (.recommendProducts als user-idx (count index->candidate))))]
                       (fn [candidate-id candidate-type]
                         (or (candidate->score candidate-id)
-                            (type->median-score candidate-type)
-                            0.5))))}))
+                            0.1))))}))
 
 (defresolver get-candidates [{::keys [item-ratings
                                       ad-ratings

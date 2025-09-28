@@ -1,5 +1,6 @@
 (ns com.yakread.model.digest
   (:require
+   [clojure.string :as str]
    [com.biffweb :as biff :refer [q]]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.routes :as routes])
@@ -84,7 +85,10 @@
                                      "Yakread")}
                       :reply_to {:email reply-to :name "Yakread"}
                       :to [{:email email}]
-                      :subject (get subject-item :item/title "Your reading digest")
+                      :subject (-> subject-item
+                                   (get :item/title "Your reading digest")
+                                   ;; turns out spam filters don't like this in subject lines
+                                   (str/replace #"(?i)dark web" ""))
                       :html html
                       :text text
                       :precedence_bulk true}}))

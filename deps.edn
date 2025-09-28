@@ -55,7 +55,7 @@
                    "-XX:+CrashOnOutOfMemoryError"
                    "-Dbiff.env.BIFF_PROFILE=dev"]
         :main-opts ["-m" "com.biffweb.task-runner" "tasks/tasks"]}
-  :prod {:jvm-opts ["-Xmx6g"
+  :prod {:jvm-opts ["-Xmx32g" ; TODO move this out of source control somehow
                     "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
                     "--add-exports=java.base/sun.security.action=ALL-UNNAMED"
                     "-XX:-OmitStackTraceInFastThrow"

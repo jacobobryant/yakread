@@ -210,15 +210,32 @@
           (line-seq r)))
 
   (def users (read-users))
+  (count users)
 
-  ;; (biff/submit-tx
-  ;;   (context)
-  ;;   (for [{:keys [xt/id user/email user/days]} users]
-  ;;     {:xt/id id
-  ;;      :user/email email
-  ;;      :user/digest-days days
-  ;;      :user/from-the-sample true
-  ;;      :user/joined-at [:db/default :db/now]}))
+  (def email->existing-user
+    (into {}
+          (q (:biff/db (context))
+             '{:find [email user]
+               :in [[email ...]]
+               :where [[user :user/email email]]}
+             (mapv :user/email users))))
+  (count email->existing-user)
+
+  (def new-users
+    (->> users
+         (remove (comp (set (keys email->existing-user)) :user/email))
+         vec))
+
+  (def now (java.time.Instant/now))
+  (biff/submit-tx
+   (context)
+   (for [{:keys [xt/id user/email user/days]} (drop 2 new-users)]
+     {:db/doc-type :user
+      :xt/id id
+      :user/email email
+      :user/digest-days days
+      :user/from-the-sample true
+      :user/joined-at now}))
 
   (read-likes)
 

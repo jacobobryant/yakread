@@ -45,9 +45,10 @@
   ([raw session]
    (MimeMessage. session (io/input-stream (.getBytes raw)))))
 
-(defn send-local! [{:keys [path from to subject rum port]
-                    :or {port 2525}}]
-  (let [session* (session {:host "localhost" :port (str port)})
+(defn send-local! [{:keys [path from to subject rum port host]
+                    :or {host "localhost"
+                         port 2525}}]
+  (let [session* (session {:host host :port (str port)})
         msg (if path
               (parse (slurp path) session*)
               (MimeMessage. session*))]

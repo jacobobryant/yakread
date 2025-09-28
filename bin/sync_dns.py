@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+# run `crontab -e` and append this line:
+# */5 * * * * /home/app/bin/sync_dns.py
 import requests
 import sys
 

@@ -141,7 +141,7 @@
    :biff.pipe.s3/presigned-url (fn [{:keys [biff.pipe.s3.presigned-url/input] :as ctx}]
                                  (assoc ctx :biff.pipe.s3.presigned-url/output (lib.s3/presigned-url ctx input)))
    :biff.pipe/sleep (fn [{:keys [biff.pipe.sleep/ms] :as ctx}]
-                      (Thread/sleep ms)
+                      (Thread/sleep (long ms))
                       ctx)
    :biff.pipe/drain-queue (fn [{:biff/keys [job queue] :as ctx}]
                             (let [ll (java.util.LinkedList.)]
