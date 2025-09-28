@@ -117,6 +117,7 @@ ufw allow "Caddy Full"
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt-get -y install nodejs zip
 ufw allow smtp
+ufw allow 2525
 
 # fail2ban:
 # apt install fail2ban
@@ -130,3 +131,7 @@ ufw allow smtp
 
 systemctl start app
 systemctl start route-smtp
+
+echo Remember to:
+echo - set up fail2ban
+echo - install cronjob for sync_dns.py

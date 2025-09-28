@@ -36,6 +36,8 @@
                               (some? (biff/lookup-id db :user/email-username (str/lower-case (:username message)))))
                   html (when result
                          (lib.smtp/extract-html message))]
+              (log/info "receiving email for"
+                        (str (str/lower-case (:username message)) "@" (:domain message)))
               (if-not result
                 (log/warn "Rejected incoming email for"
                           (str (str/lower-case (:username message)) "@" (:domain message)))

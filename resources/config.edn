@@ -18,7 +18,7 @@
  :biff.tasks/generate-assets-fn com.yakread/generate-assets!
  :biff.tasks/main-ns com.yakread
  :biff.tasks/on-soft-deploy "\"(com.yakread/on-save @com.yakread/system)\""
- :biff.tasks/server #biff/env DOMAIN
+ :biff.tasks/server #biff/env SERVER
  :biff.xtdb.jdbc/jdbcUrl #biff/secret "XTDB_JDBC_URL"
  :biff.xtdb/dir "storage/xtdb"
  :biff.xtdb/topology #keyword #or [#profile {:prod #biff/env "PROD_XTDB_TOPOLOGY" :default #biff/env "XTDB_TOPOLOGY"}
@@ -36,7 +36,6 @@
  :recaptcha/secret-key #biff/secret RECAPTCHA_SECRET_KEY
  :recaptcha/site-key   #biff/env RECAPTCHA_SITE_KEY
 
- ;; TODO uncomment
  :stripe/api-key          #profile {:prod #biff/secret STRIPE_SECRET_KEY_PROD
                                     :dev #biff/secret STRIPE_SECRET_KEY_DEV}
  :stripe/public-api-key   #profile {:prod #biff/env STRIPE_PUBLIC_API_KEY_PROD
@@ -69,7 +68,6 @@
  :yakread.pipe.js/base-url #biff/env CLOUD_FN_BASE_URL
  :yakread.pipe.js/secret   #biff/secret CLOUD_FN_SECRET
 
- ;; disable until migration is complete
  :yakread.work.sync-all-feeds/enabled      #profile {:prod true :default false}
  :yakread.work.queue-add-candidate/enabled #profile {:prod true :default false}
  :yakread.work.digest/enabled              #profile {:prod true :default false}

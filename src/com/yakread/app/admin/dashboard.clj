@@ -1,5 +1,7 @@
 (ns com.yakread.app.admin.dashboard
   (:require
+   [clojure.string :as str]
+   [clojure.java.shell :as sh]
    [com.yakread.lib.admin :as lib]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.route :as lib.route :refer [defget href]]
@@ -21,9 +23,16 @@
      :user/joined-at]}
    :admin/dau
    :admin/revenue]
-  (fn [{:keys [biff/now]} {:admin/keys [recent-users dau revenue]}]
+  (fn [{:biff/keys [now queues]} {:admin/keys [recent-users dau revenue]}]
     (ui/wide-page-well
      [:.grid.xl:grid-cols-2.gap-8
+      (ui/section
+       {:title "Queues"}
+       (ui/table
+         ["Queue" "# jobs"]
+         (->> (update-vals queues count)
+              (sort-by second >))))
+
       (ui/section
        {:title "Recent signups"}
        (ui/table
@@ -51,7 +60,14 @@
      (lib/navbar :dashboard)
      (ui/lazy-load (href page-content-route)))))
 
+(defget logs-page "/admin/logs"
+  []
+  (fn [ctx _]
+    [:pre
+     (:out (sh/sh "journalctl" "-u" "app" "-n" "300"))]))
+
 (def module
   {:routes ["" {:middleware [lib.mid/wrap-admin]}
             page-route
-            page-content-route]})
+            page-content-route
+            logs-page]})

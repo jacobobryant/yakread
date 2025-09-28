@@ -101,7 +101,7 @@
                                            :digest/payload (:digest/payload output)})]}))))
 
 (def default-payload-size-limit (* 50 1000 1000))
-(def default-n-emails-limit 500)
+(def default-n-emails-limit 50)
 
 (defpipe send-digest
   :start
@@ -168,7 +168,7 @@
                          :bulk-send/digests digest-ids}])
                       ;; Mailersend limits bulk request to 15 / minute.
                       ;; https://developers.mailersend.com/api/v1/email.html#send-bulk-emails
-                      (lib.pipe/sleep (+ (/ 60000 15) 1000))]}))
+                      (lib.pipe/sleep (+ (/ 60000 9) 1000))]}))
 
 (def module
   {:tasks [{:task #'queue-prepare-digest
