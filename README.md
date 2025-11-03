@@ -32,7 +32,7 @@ First, read [Project Layout](https://biffweb.com/docs/reference/project-layout/)
 
 Beyond that, Yakread makes heavy use of [Pathom](https://pathom3.wsscode.com/). Pathom helps us to
 split up the codebase into small understandable chunks, with each chunk declaring explicitly the
-shape of the data it needs. If you've ever had trouble traicing up through several layers of code to
+shape of the data it needs. If you've ever had trouble tracing up through several layers of code to
 figure out where a particular piece of data is coming from, Pathom solves that problem.
 
 Yakread also takes [an experimental approach](https://biffweb.com/p/removing-effects/) to dealing
