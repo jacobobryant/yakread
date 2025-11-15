@@ -7,11 +7,8 @@
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pathom :as lib.pathom]
    [edn-query-language.core :as eql]
-   [com.wsscode.pathom3.interface.eql :as p.eql]
    [lambdaisland.uri :as uri]
-   [xtdb.api :as xt]
-   [clojure.tools.logging :as log]
-   [taoensso.tufte :refer [p]]))
+   [xtdb.api :as xt]))
 
 (def n-skipped (some-fn :item/n-skipped :item/n-skipped-with-digests))
 
@@ -414,7 +411,6 @@
                                      [usit :user-item/item item]
                                      [item :item/url url]
                                      (or [usit :user-item/viewed-at _]
-                                         [usit :user-item/skipped-at _]
                                          [usit :user-item/favorited-at _]
                                          [usit :user-item/disliked-at _]
                                          [usit :user-item/reported-at _])]}

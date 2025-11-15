@@ -13,6 +13,7 @@
 (defn recent-items [{:biff/keys [db now]
                      :user/keys [digest-last-sent]
                      :keys [all-item-ids]}]
+  ;; TODO make this requery for email/rss items
   (mapv (fn [[id]]
           {:xt/id id})
         (q db
@@ -43,6 +44,7 @@
                 (? :user/digest-last-sent)
                 {:user/bookmarks [:xt/id]}]
    ::pco/output [{:user/digest-bookmarks [:xt/id]}]}
+  ;; TODO bookmark recency should be based on :user-item/bookmarked-at, not :item/ingested-at
   {:user/digest-bookmarks
    (recent-items
     {:biff/db db

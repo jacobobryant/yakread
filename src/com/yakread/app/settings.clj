@@ -331,14 +331,18 @@
 
 (defget page "/settings"
   [:app.shell/app-shell
+   {(? :session/user) [:xt/id]}
    ::main-settings
    ::premium
    ::account]
-  (fn [{:keys [params]} {:keys [app.shell/app-shell] ::keys [main-settings premium account]}]
+  (fn [{:keys [params]} {:keys [app.shell/app-shell
+                                session/user]
+                         ::keys [main-settings premium account]}]
     (app-shell
      {:title "Settings"}
      (ui/page-header {:title "Settings"})
      [:fieldset.disabled:opacity-60
+      {:disabled (when-not user "disabled")}
       (ui/page-well main-settings
                     premium
                     account)]

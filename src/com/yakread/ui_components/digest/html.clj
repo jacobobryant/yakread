@@ -13,7 +13,7 @@
   [:div {:style {:margin-bottom (if excerpt "30px" "20px")}}
    [:div {:style {:font-size "90%"
                   :line-height "20px"
-                  :color "#626262"}}
+                  :color "#595959"}}
     details]
    [:div [:a {:href url
               :style {:text-decoration "none"
@@ -23,7 +23,7 @@
                       :line-height "23px"}}
           title]]
    (when excerpt
-     [:div {:style {:color "#626262"
+     [:div {:style {:color "#595959"
                     :font-size "16px"
                     :line-height "22.85px"
                     :margin-top "2px"}}

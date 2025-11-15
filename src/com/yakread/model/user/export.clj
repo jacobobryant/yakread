@@ -21,7 +21,6 @@
    (->> (q db
            '{:find url
              :in [user]
-             :limit 10
              :where [[sub :sub/user user]
                      [sub :sub.feed/feed feed]
                      [feed :feed/url url]]}
