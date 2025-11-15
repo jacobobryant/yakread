@@ -5,7 +5,7 @@
    [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]
    [com.yakread.lib.ads :as lib.ads]
    [com.yakread.lib.pathom :refer [? process]]
-   [xtdb.api :as xt :refer [q]])
+   #_[xtdb.api :as xt :refer [q]])
   (:import
    [com.yakread AverageRating]
    [java.time Instant Period]
@@ -19,7 +19,9 @@
 (defresolver item-candidates [{:keys [biff/db]} _]
   {::pco/output [{::item-candidates [:xt/id
                                      :item/url]}]}
-  {::item-candidates
+  ;; TODO
+  {}
+  #_{::item-candidates
    (mapv first
          (q db
             '{:find [(pull direct-item [:xt/id :item/url])]
@@ -31,7 +33,9 @@
 (defresolver ads [{:biff/keys [db now]} _]
   {::pco/output [{::all-ads [:xt/id]}
                  {::ad-candidates [:xt/id]}]}
-  (let [all-ads (mapv first
+  ;; TODO
+  {}
+  #_(let [all-ads (mapv first
                       (q db
                          '{:find [(pull ad [*])]
                            :where [[ad :ad/user]]}))
@@ -55,6 +59,8 @@
                                 :rating/user
                                 :rating/value
                                 :rating/created-at]}]}
+  {}
+  ;; TODO
   (let [ad-ids (mapv :xt/id all-ads)
         skip-info (q db
                      '{:find [ad user (count skip) (max t)]
@@ -89,7 +95,9 @@
   {::pco/input [{::item-candidates [:xt/id
                                     :item/url]}]
    ::pco/output [::dedupe-item-id]}
-  (let [item-id->url (into {}
+  {}
+  ;; TODO
+  #_(let [item-id->url (into {}
                            (q db
                               '{:find [item url]
                                 :in [[url ...]]
@@ -108,7 +116,9 @@
                                   :rating/candidate
                                   :rating/value
                                   :rating/created-at]}]}
-  (let [all-item-ids (mapv first
+  {}
+  ;; TODO
+  #_(let [all-item-ids (mapv first
                            (q db
                               '{:find [item]
                                 :in [[url ...]]

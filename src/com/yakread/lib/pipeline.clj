@@ -14,7 +14,7 @@
    [com.yakread.lib.pathom :as lib.pathom]
    [com.yakread.lib.s3 :as lib.s3]
    [remus]
-   [xtdb.api :as xt]
+   ;;[xtdb.api :as xt]
    [taoensso.tufte :refer [p]]))
 
 ;; TODO rename to :biff/now, :biff/seed
@@ -56,7 +56,8 @@
                                   (lib.error/request-ex-data ctx*)
                                   (apply dissoc ctx (keys ctx*))
                                   {:biff.pipe/seed seed
-                                   :biff.pipe/db-basis (some-> (:biff/db ctx) xt/db-basis)})))))))))))))
+                                   ;;:biff.pipe/db-basis (some-> (:biff/db ctx) xt/db-basis)
+                                   })))))))))))))
 
 (defmacro defpipe [sym & args]
   `(def ~sym (make ~@args)))
@@ -103,12 +104,13 @@
                       ;; to a particular provider. For sending digests we need mailersend-specific
                       ;; features, so we use :biff.pipe/http there instead.
                       (assoc ctx :biff.pipe.email/output (send-email ctx input)))
-   :biff.pipe/tx (fn [{:biff.pipe.tx/keys [input retry] :as ctx}]
-                   (assoc ctx :biff.pipe.tx/output
-                          (biff/submit-tx
-                            (cond-> ctx
-                              (some? retry) (assoc :biff.xtdb/retry retry))
-                            (replace-db-now input))))
+   ;; TODO
+   ;;:biff.pipe/tx (fn [{:biff.pipe.tx/keys [input retry] :as ctx}]
+   ;;                (assoc ctx :biff.pipe.tx/output
+   ;;                       (biff/submit-tx
+   ;;                         (cond-> ctx
+   ;;                           (some? retry) (assoc :biff.xtdb/retry retry))
+   ;;                         (replace-db-now input))))
    :biff.pipe/pathom (fn [{:biff.pipe.pathom/keys [entity query] :as ctx}]
                        (assoc ctx
                               :biff.pipe.pathom/output

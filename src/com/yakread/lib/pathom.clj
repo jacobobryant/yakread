@@ -7,7 +7,7 @@
    [com.wsscode.pathom3.interface.eql :as eql]
    [com.yakread.lib.error :as lib.error]
    [taoensso.tufte :refer [p]]
-   [xtdb.api :as xt]))
+   #_[xtdb.api :as xt]))
 
 ;; TODO try to do this without monkey patching
 (alter-var-root #'runner/processor-exception (constantly (fn [_ ex] ex)))
@@ -17,12 +17,12 @@
 
 (defn process [{:keys [::resolver-cache] :or {resolver-cache (atom {})} :as ctx} & args]
   (try
-    (with-open [db (if (:biff.index/indexes ctx)
-                     (biff/open-db-with-index ctx)
-                     (xt/open-db (:biff.xtdb/node ctx)))]
+    (do #_#_with-open [db (if (:biff.index/indexes ctx)
+                            (biff/open-db-with-index ctx)
+                            (xt/open-db (:biff.xtdb/node ctx)))]
       (apply eql/process
              (-> ctx
-                 (assoc :biff/db db :biff.db/basis (xt/db-basis db))
+                 #_(assoc :biff/db db :biff.db/basis (xt/db-basis db))
                  (runner/with-resolver-cache resolver-cache))
              args))
     (catch Exception e

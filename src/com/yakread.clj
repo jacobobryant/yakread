@@ -8,7 +8,7 @@
    [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.indexes :as pci]
    [com.wsscode.pathom3.connect.planner :as pcp]
-   [com.yakread.lib.auth :as lib.auth]
+   ;;[com.yakread.lib.auth :as lib.auth]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.email :as lib.email]
    [com.yakread.lib.jetty :as lib.jetty]
@@ -37,12 +37,13 @@
 
 (def modules
   (concat modules/modules
-          [(lib.auth/module
-            #:biff.auth{:app-path "/"
-                        :email-validator lib.auth/email-valid?
-                        :link-expire-minutes (* 60 24 7)
-                        :allowed-redirects #{"/"
-                                             (href routes/for-you)}})]))
+          ;; TODO
+          [#_(lib.auth/module
+              #:biff.auth{:app-path "/"
+                          :email-validator lib.auth/email-valid?
+                          :link-expire-minutes (* 60 24 7)
+                          :allowed-redirects #{"/"
+                                               (href routes/for-you)}})]))
 
 (def router (reitit-ring/router
              [["" {:middleware lib.mid/default-site-middleware}

@@ -12,7 +12,7 @@
    [ring.util.request :as ring-req]
    [rum.core :as rum]
    [taoensso.tufte :as tufte]
-   [xtdb.api :as xt])
+   #_[xtdb.api :as xt])
   (:import
    [com.stripe.net Webhook]))
 
@@ -124,7 +124,8 @@
 
 (defn wrap-admin [handler]
   (fn [{:keys [biff/db session] :as ctx}]
-    (if (contains? (:user/roles (xt/entity db (:uid session))) :admin)
+    ;; TODO
+    (if false #_(contains? (:user/roles (xt/entity db (:uid session))) :admin)
       (handler ctx)
       {:status 401
        :headers {"content-type" "text/html"}

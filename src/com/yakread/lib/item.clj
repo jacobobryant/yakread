@@ -16,6 +16,7 @@
   {:start
    (fn [{:biff/keys [db base-url] :as ctx}]
      (let [url (str/trim (get-url ctx))]
+       ;; TODO
        (if-some [item (or (biff/lookup db :item/url url :item/doc-type :item/direct)
                              (biff/lookup db :item/redirect-urls url :item/doc-type :item/direct))]
          (on-success ctx {:item/id (:xt/id item) :item/url (:item/url item)})
