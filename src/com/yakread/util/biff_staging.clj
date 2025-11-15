@@ -11,7 +11,7 @@
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
    [malli.core :as malli]
    [malli.registry :as malr]
-   [xtdb.api :as xt]
+   ;;[xtdb.api :as xt]
    [aero.core :as aero]))
 
 (defn doc-asts [{:keys [registry] :as malli-opts}]
@@ -59,7 +59,9 @@
                  doc))))
 
 (defn pull-resolvers [malli-opts]
-  (let [{:keys [all-attrs ref-attrs]} (schema-info malli-opts)]
+  ;; TODO
+  []
+  #_(let [{:keys [all-attrs ref-attrs]} (schema-info malli-opts)]
     (concat
      [(pco/resolver `entity-resolver
                     {::pco/input [:xt/id]

@@ -94,7 +94,7 @@
   (let [;snapshots (biff/index-snapshots ctx)
         ]
     (-> ctx
-        (biff/assoc-db)
+        ;;(biff/assoc-db)
         (merge pathom-env
                (some-> model deref)
                {:biff/router router
@@ -148,10 +148,10 @@
 (def components
   [biff/use-aero-config
    use-error-reporting
-   biff/use-xt
+   ;;biff/use-xt
    lib.spark/use-spark
    biff/use-queues
-   biff/use-tx-listener
+   ;;biff/use-tx-listener
    lib.jetty/use-jetty
    biff/use-chime
    biff/use-beholder
@@ -166,7 +166,7 @@
                      :biff/send-email #'lib.email/send-email
                      :biff.beholder/on-save #'on-save
                      :biff.pipe/global-handlers lib.pipeline/global-handlers
-                     :biff.xtdb/tx-fns biff/tx-fns
+                     ;;:biff.xtdb/tx-fns biff/tx-fns
                      :com.yakread/home-feed-cache (atom {})
                      lib.pathom/plan-cache-kw (atom {})
                      :biff.smtp/accept? #'smtp/accept?
