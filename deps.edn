@@ -1,7 +1,18 @@
 {:paths ["src" "resources" "target/resources" "target/classes"]
  :deps {com.biffweb/biff                    {:git/url "https://github.com/jacobobryant/biff"
                                              ;; indexes branch
-                                             :git/sha "7836079fc64a6334ea5a43e5e92bcbd7faa1d300"}
+                                             ;;:git/sha "7836079fc64a6334ea5a43e5e92bcbd7faa1d300"
+                                             ;; xtdb2 branch
+                                             :git/sha "ff0f2294206d1fb8f33bc0acd79c0247c95cb9b2"
+                                             :exclusions [com.xtdb/xtdb-core
+                                                          com.xtdb/xtdb-jdbc
+                                                          com.xtdb/xtdb-rocksdb
+                                                          org.postgresql/postgresql]}
+        com.xtdb/xtdb-api                   {:mvn/version "2.x-SNAPSHOT"}
+        com.xtdb/xtdb-aws                   {:mvn/version "2.x-SNAPSHOT"}
+        com.xtdb/xtdb-core                  {:mvn/version "2.x-SNAPSHOT"}
+        com.zaxxer/HikariCP                 {:mvn/version "7.0.2"}
+
         vouch-opensource/fugato             {:git/url "https://github.com/vouch-opensource/fugato"
                                              :git/sha "4c1f687bca84f1f7777f347acdaafd49c182eae0"}
         com.stuartsierra/dependency         {:mvn/version "1.0.0"}
@@ -51,16 +62,30 @@
                                         :git/sha "c53c273c7e1a1773a57f9df6750a7c4448e47052"
                                         :deps/root "libs/tasks"}}
         :extra-paths ["dev" "test"]
-        :jvm-opts ["--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
+        :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                   "-Dio.netty.tryReflectionSetAccessible=true"
+                   "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
                    "--add-exports=java.base/sun.security.action=ALL-UNNAMED"
                    "-XX:-OmitStackTraceInFastThrow"
                    "-XX:+CrashOnOutOfMemoryError"
                    "-Dbiff.env.BIFF_PROFILE=dev"]
         :main-opts ["-m" "com.biffweb.task-runner" "tasks/tasks"]}
   :prod {:jvm-opts ["-Xmx32g" ; TODO move this out of source control somehow
+                    "--add-opens=java.base/java.nio=ALL-UNNAMED"
+                    "-Dio.netty.tryReflectionSetAccessible=true"
                     "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
                     "--add-exports=java.base/sun.security.action=ALL-UNNAMED"
                     "-XX:-OmitStackTraceInFastThrow"
                     "-XX:+CrashOnOutOfMemoryError"
                     "-Dbiff.env.BIFF_PROFILE=prod"]
-         :main-opts ["-m" "com.yakread"]}}}
+         :main-opts ["-m" "com.yakread"]}
+  :import {:deps {io.github.biffweb/config  {:git/tag "v1.0" :git/sha "cc7ba13"}
+                  io.github.biffweb/migrate {:git/tag "v1.0" :git/sha "ab1b7f3" :deps/root "xtdb2"}}
+           :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
+                      "-Dio.netty.tryReflectionSetAccessible=true"
+                      "-Dbiff.env.BIFF_PROFILE=prod"]
+           :main-opts ["-m" "tasks.migrate-xt"]}
+  :mvn/repos
+  {"central"            {:url "https://repo1.maven.org/maven2/"}
+   "clojars"            {:url "https://clojars.org/repo"}
+   "sonatype-snapshots" {:url "https://central.sonatype.com/repository/maven-snapshots/"}}}}

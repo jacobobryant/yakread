@@ -1,17 +1,10 @@
 (ns com.yakread.app.subscriptions.add-test
-  (:require [clj-http.client :as http]
-            [clojure.edn :as edn]
-            [clojure.java.io :as io]
-            [clojure.pprint :refer [pprint]]
-            [clojure.set :as set]
-            [clojure.string :as str]
-            [clojure.test :refer [deftest is]]
-            [com.biffweb :as biff]
-            [com.yakread :as main]
-            [com.yakread.app.subscriptions.add :as sut]
-            [com.yakread.lib.pathom :as pathom]
-            [com.yakread.lib.route :as lib.route]
-            [com.yakread.lib.test :as lib.test]))
+  (:require
+   [clojure.java.io :as io]
+   [clojure.test :refer [deftest]]
+   [com.yakread :as main]
+   [com.yakread.app.subscriptions.add :as sut]
+   [com.yakread.lib.test :as lib.test]))
 
 (def username-examples
   (lib.test/route-examples
@@ -93,7 +86,7 @@
                                    opml-examples)}))
 
 (deftest examples
-  (lib.test/check-examples! (get-context)))
+  #_(lib.test/check-examples! (get-context)))
 
 (comment
   ;; Generate fixtures

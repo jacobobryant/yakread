@@ -1,8 +1,8 @@
 (ns com.yakread.smtp-test
-  (:require [clojure.test :refer [deftest is]]
-            [com.yakread.smtp :as sut]
-            [com.yakread.lib.test :as lib.test]
-            [com.yakread :as main]))
+  (:require
+   [com.yakread :as main]
+   [com.yakread.lib.test :as lib.test]
+   [com.yakread.smtp :as sut]))
 
 ;; TODO add some tests after setting up fixtures
 

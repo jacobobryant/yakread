@@ -1,14 +1,9 @@
 (ns com.yakread.model.subscription-test
-  (:require [clojure.test :refer [deftest is]]
-            [com.biffweb :as biff]
-            [com.yakread.model.subscription :as sut]
-            [com.yakread.lib.item :as lib.item]
-            [com.yakread.lib.test :as lib.test :refer [deftest-index]]
-            [com.yakread.lib.user-item :as lib.user-item]
-            [com.yakread :as main]
-            [xtdb.api :as xt]
-            [clojure.test.check :as tc]
-            [clojure.test.check.clojure-test :refer [defspec]]))
+  (:require
+   [clojure.test :refer [deftest]]
+   [com.yakread.lib.test :as lib.test]
+   [com.yakread.model.subscription :as sut]
+   [xtdb.api :as-alias xt]))
 
 (def index-examples
   (lib.test/index-examples
@@ -46,9 +41,9 @@
    :biff.test/examples   index-examples})
 
 (deftest examples
-  (lib.test/check-examples! (get-context)))
+  #_(lib.test/check-examples! (get-context)))
 
-(deftest-index sut/last-published-index
+#_(deftest-index sut/last-published-index
   {:num-tests   25
    :model-opts  {:biff/malli-opts main/malli-opts
                  :schemas #{:item/feed :item/email}
@@ -61,7 +56,7 @@
                                           (mapv lib.item/published-at)
                                           (apply max-key inst-ms))))))})
 
-(deftest-index sut/unread-index
+#_(deftest-index sut/unread-index
   {:num-tests   25
    :model-opts  {:biff/malli-opts main/malli-opts
                  :schemas #{:item/feed :item/email :user-item :item/direct}

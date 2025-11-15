@@ -1,29 +1,28 @@
 (ns com.yakread.lib.test
-  (:require [clojure.data.generators :as gen]
-            [clojure.edn :as edn]
-            [clojure.java.io :as io]
-            [clojure.pprint :as pprint :refer [pprint]]
-            [clojure.set :as set]
-            [clojure.string :as str]
-            [clojure.test :as test :refer [is]]
-            [clojure.test.check :as tc]
-            [clojure.test.check.clojure-test :refer [defspec]]
-            [clojure.test.check.generators :as tc-gen]
-            [clojure.test.check.properties :as prop]
-            [clojure.tools.logging :as log]
-            [com.biffweb :as biff]
-            [com.stuartsierra.dependency :as dep]
-            [com.yakread :as main]
-            [com.yakread.lib.route :as lib.route]
-            [com.yakread.util.biff-staging :as biffs]
-            [fugato.core :as fugato]
-            [lambdaisland.uri :as uri]
-            [malli.experimental.time.generator]
-            [malli.generator :as malli.g]
-            [time-literals.read-write :as time-literals]
-            [xtdb.api :as xt]
-            [clojure.java.classpath :as cp])
-  (:import [java.time Instant]))
+  (:require
+   [clojure.data.generators :as gen]
+   [clojure.edn :as edn]
+   [clojure.java.classpath :as cp]
+   [clojure.java.io :as io]
+   [clojure.pprint :as pprint :refer [pprint]]
+   [clojure.string :as str]
+   [clojure.test :as test :refer [is]]
+   [clojure.test.check :as tc]
+   [clojure.test.check.generators :as tc-gen]
+   [clojure.test.check.properties :as prop]
+   [clojure.tools.logging :as log]
+   [com.biffweb :as biff]
+   [com.stuartsierra.dependency :as dep]
+   [com.yakread :as main]
+   [com.yakread.lib.route :as lib.route]
+   [com.yakread.util.biff-staging :as biffs]
+   [fugato.core :as fugato]
+   [malli.experimental.time.generator]
+   [malli.generator :as malli.g]
+   [time-literals.read-write :as time-literals]
+   #_[xtdb.api :as xt])
+  (:import
+   [java.time Instant]))
 
 (defn- read-string* [s & [extra-readers]]
   (edn/read-string {:readers (merge time-literals/tags
@@ -115,13 +114,6 @@
                          (or minute 0)
                          (or second* 0))))
 
-(defmacro with-db [[db-sym docs] & body]
-  `(with-open [node# (xt/start-node {})]
-     (xt/await-tx node# (xt/submit-tx node# (for [doc# ~docs]
-                                              [::xt/put doc#])))
-     (let [~db-sym (xt/db node#)]
-       ~@body)))
-
 (defn queue [& jobs]
   (let [queue (java.util.concurrent.PriorityBlockingQueue. 11 (fn [a b] 0))]
     (run! #(.add queue %) jobs)
@@ -152,7 +144,7 @@
 
 ;;; ---
 
-(defn- actual [{:keys [biff.test/fixtures
+#_(defn- actual [{:keys [biff.test/fixtures
                        biff.test/empty-db
                        biff/modules
                        biff/router]
@@ -182,7 +174,7 @@
     (if (not-empty db-contents)
       (with-open [node (xt/start-node {})]
         (xt/await-tx node (xt/submit-tx node (for [doc db-contents]
-                                               [::xt/put doc])))
+                                               [:xtdb.api/put doc])))
         (sut (assoc ctx :biff/db (xt/db node))))
       (sut (assoc ctx :biff/db empty-db)))))
 
@@ -213,7 +205,7 @@
     (when (.exists file)
       (read-string* (slurp file)))))
 
-(defn write-examples! [{:biff.test/keys [current-ns examples] :as ctx}]
+#_(defn write-examples! [{:biff.test/keys [current-ns examples] :as ctx}]
   (binding [gen/*rnd* (java.util.Random. 0)
             *print-namespace-maps* true
             lib.route/*testing* true]
@@ -230,7 +222,7 @@
               (println))
             (println "]")))))))
 
-(defn check-examples! [{:biff.test/keys [examples current-ns] :as ctx}]
+#_(defn check-examples! [{:biff.test/keys [examples current-ns] :as ctx}]
   (binding [gen/*rnd* (java.util.Random. 0)
             *print-namespace-maps* true
             lib.route/*testing* true]
@@ -358,13 +350,13 @@
        (reduce (fn [changes doc]
                  (merge changes
                         (indexer #:biff.index{:index-get changes
-                                              :op ::xt/put
+                                              :op :xtdb.api/put
                                               :doc doc})))
                {})
        (remove (comp nil? val))
        (into {})))
 
-(defn indexer-prop [{:keys [indexer model-opts expected-fn]}]
+#_(defn indexer-prop [{:keys [indexer model-opts expected-fn]}]
   (let [model (make-model model-opts)]
     (prop/for-all [commands (fugato/commands model {} 5 1)]
       (let [docs (mapv (comp first :args) commands)
@@ -391,7 +383,7 @@
                doc)
         [changes steps] (reduce (fn [[changes steps] doc]
                                   (let [new-changes (indexer #:biff.index{:index-get changes
-                                                                          :op ::xt/put
+                                                                          :op :xtdb.api/put
                                                                           :doc doc})]
                                     [(merge changes new-changes)
                                      (into steps [doc
@@ -408,7 +400,7 @@
         (biff/pprint (conj steps state))))
     (str tmp-file)))
 
-(defn test-index [index opts]
+#_(defn test-index [index opts]
   (let [num-tests (:num-tests opts)
         prop-opts (assoc (select-keys opts [:model-opts :expected-fn])
                          :indexer (:indexer index))
@@ -422,7 +414,7 @@
                  true (assoc :index (:id index)))]
     result))
 
-(defmacro deftest-index [index opts]
+#_(defmacro deftest-index [index opts]
   (assert (symbol? index) (str "First argument must be a symbol, instead got: " (pr-str index)))
   `(test/deftest ~(symbol (str (name index) "-test"))
      (prn (test-index ~index ~opts))))

@@ -79,6 +79,26 @@
                                attr
                                vec)))))))
 
+(comment
+
+  (require '[clojure.string :as str])
+
+  (defn ?s [n]
+    (str "(" (str/join ", " (repeat n "?")) ")"))
+
+  (defn columns-for [ks]
+    "...")
+
+  (pco/defresolver user-resolver [{:keys [biff/conn]} inputs]
+    {::pco/input [:xt/id]
+     ::pco/output [:user/email ,,,]
+     ::pco/batch? true}
+    (xt/q conn [(str "select "
+                     (columns-for [:user/email ,,,])
+                     " from users where _id in "
+                     (?s (count inputs)))
+                (mapv :xt/id inputs)])))
+
 ;; TODO maybe use this somewhere
 (defn wrap-db-with-index [handler]
   (fn [{:keys [biff/db] :as ctx}]
