@@ -1,10 +1,9 @@
 (ns com.yakread.model.admin 
   (:require
    [com.biffweb :as biff :refer [q]]
-   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver ?]])
+   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]])
   (:import
-   [java.time Instant LocalDate ZoneId]
-   [java.time.temporal ChronoUnit]))
+   [java.time ZoneId]))
 
 (defresolver recent-users [{:biff/keys [db now]} _]
   {::pco/output [{:admin/recent-users [:xt/id]}]}

@@ -9,7 +9,7 @@
    [com.yakread.lib.serialize :as lib.serialize]
    [com.yakread.lib.user-item :as lib.user-item]
    [com.yakread.util.biff-staging :as biffs]
-   [xtdb.api :as xt]))
+   [xtdb.api :as-alias xt]))
 
 (defresolver user-subs [{:keys [biff/db]} {:keys [user/id]}]
   #::pco{:output [{:user/subscriptions [:sub/id]}
@@ -135,13 +135,15 @@
   (let [sub-id (or (:sub/id params)
                    (lib.serialize/url->uuid (:sub-id path-params)))
         sub (when (some? sub-id)
-              (xt/entity db sub-id))]
+              ;; TODO
+              #_(xt/entity db sub-id))]
     (when (and sub (= (:uid session) (:sub/user sub)))
       {:params/sub (biffs/joinify @malli-opts sub)})))
 
 (defresolver params-checked [{:keys [biff/db biff/malli-opts session form-params params]} _]
   #::pco{:output [{:params.checked/subscriptions [:sub/id]}]}
-  (let [subs* (mapv #(some->> % name parse-uuid (xt/entity db))
+  ;; TODO
+  #_(let [subs* (mapv #(some->> % name parse-uuid (xt/entity db))
                     (keys (:subs params)))]
     (when (every? #(= (:uid session) (:sub/user %)) subs*)
       {:params.checked/subscriptions (mapv #(biffs/joinify @malli-opts %) subs*)})))

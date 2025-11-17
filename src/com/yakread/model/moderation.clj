@@ -1,7 +1,7 @@
 (ns com.yakread.model.moderation
   (:require
    [com.biffweb :as biff :refer [q]]
-   [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]))
+   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]))
 
 (defresolver next-batch [{:keys [biff/db yakread.model/all-liked-items]} _]
   {::pco/output [{:admin.moderation/next-batch [:item/id :item/n-likes]}

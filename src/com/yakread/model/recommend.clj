@@ -7,8 +7,7 @@
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pathom :as lib.pathom]
    [edn-query-language.core :as eql]
-   [lambdaisland.uri :as uri]
-   [xtdb.api :as xt]))
+   [lambdaisland.uri :as uri]))
 
 (def n-skipped (some-fn :item/n-skipped :item/n-skipped-with-digests))
 
@@ -107,12 +106,12 @@
                                                [skip :skip/timeline-created-at t]]}
                                      q-inputs)
                                   (lib.core/group-by-to (juxt first second) #(nth % 2)))
-        user+sub->user-items (->> (xt/q db
-                                        '{:find [user sub (pull usit [*])]
-                                          :in [[[user sub item]]]
-                                          :where [[usit :user-item/item item]
-                                                  [usit :user-item/user user]]}
-                                        q-inputs)
+        user+sub->user-items (->> (q db
+                                     '{:find [user sub (pull usit [*])]
+                                       :in [[[user sub item]]]
+                                       :where [[usit :user-item/item item]
+                                               [usit :user-item/user user]]}
+                                     q-inputs)
                                   (lib.core/group-by-to (juxt first second) #(nth % 2)))]
     (mapv (fn [{:sub/keys [id user] :as sub}]
             (let [user-items   (get user+sub->user-items [(:xt/id user) id])
@@ -404,18 +403,18 @@
            read? (fn [url]
                    (boolean
                     (not-empty
-                     (xt/q db
-                           '{:find [url]
-                             :in [user url]
-                             :where [[usit :user-item/user user]
-                                     [usit :user-item/item item]
-                                     [item :item/url url]
-                                     (or [usit :user-item/viewed-at _]
-                                         [usit :user-item/favorited-at _]
-                                         [usit :user-item/disliked-at _]
-                                         [usit :user-item/reported-at _])]}
-                           user-id
-                           url))))
+                     (q db
+                        '{:find [url]
+                          :in [user url]
+                          :where [[usit :user-item/user user]
+                                  [usit :user-item/item item]
+                                  [item :item/url url]
+                                  (or [usit :user-item/viewed-at _]
+                                      [usit :user-item/favorited-at _]
+                                      [usit :user-item/disliked-at _]
+                                      [usit :user-item/reported-at _])]}
+                        user-id
+                        url))))
 
            candidates (vec candidates) ; does this matter?
            url->host (into {} (map (juxt :item/url (comp :host uri/uri :item/url))) candidates)
