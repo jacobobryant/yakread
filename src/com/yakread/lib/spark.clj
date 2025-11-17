@@ -1,5 +1,6 @@
 (ns com.yakread.lib.spark
   (:require
+   [com.biffweb :refer [q]]
    [clojure.tools.logging :as log]
    [com.wsscode.pathom3.connect.indexes :as pci]
    [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]

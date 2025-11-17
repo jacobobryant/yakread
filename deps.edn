@@ -61,7 +61,8 @@
         org.slf4j/jul-to-slf4j              {:mvn/version "1.7.36"}
         org.slf4j/jcl-over-slf4j            {:mvn/version "1.7.36"}
 
-        io.github.biffweb/migrate           {:git/tag "v1.0" :git/sha "c490275" :deps/root "xtdb1"}}
+        ;;io.github.biffweb/migrate           {:git/tag "v1.0" :git/sha "c490275" :deps/root "xtdb1"}
+        }
  :aliases
  {:run {:extra-deps {com.biffweb/tasks {:git/url "https://github.com/jacobobryant/biff",
                                         :git/sha "c53c273c7e1a1773a57f9df6750a7c4448e47052"

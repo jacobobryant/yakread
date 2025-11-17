@@ -74,15 +74,17 @@
      :sub/doc-type :sub/feed}))
 
 (defresolver unread [{:keys [biff/db]} {:sub/keys [user source-id]}]
-  {:sub/unread
-   (let [total (or (biff/index-get db :unread source-id) 0)
+  ;; TODO
+  {:sub/unread 0
+   #_(let [total (or (biff/index-get db :unread source-id) 0)
          _read (or (biff/index-get db :unread [(:xt/id user) source-id]) 0)
          unread (- total _read)]
      unread)})
 
 (defresolver published-at [{:keys [biff/db]} {:keys [sub/source-id]}]
   {::pco/output [:sub/published-at]}
-  (when-some [published-at (biff/index-get db :last-published source-id)]
+  ;; TODO
+  #_(when-some [published-at (biff/index-get db :last-published source-id)]
     {:sub/published-at published-at}))
 
 (defresolver items [{:keys [biff/db]} subscriptions]

@@ -32,7 +32,8 @@
    [taoensso.telemere :as tel]
    [taoensso.telemere.tools-logging :as tel.tl]
    [time-literals.read-write :as time-literals]
-   [com.biffweb.migrate.xtdb1 :as migrate.xtdb1])
+   ;[com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
+   )
   (:gen-class))
 
 (def modules
@@ -204,10 +205,10 @@
   (time-literals/print-time-literals-clj!)
   (alter-var-root #'gen/*rnd* (constantly (java.util.Random. (inst-ms (java.time.Instant/now)))))
   (let [{:keys [biff.nrepl/args biff.xtdb/node]} (start)]
-    (future
-      (biff/catchall-verbose
-       (migrate.xtdb1/export node "storage/migrate-export")
-       (log/info "done exporting")))
+    #_(future
+        (biff/catchall-verbose
+         (migrate.xtdb1/export node "storage/migrate-export")
+         (log/info "done exporting")))
     (apply nrepl-cmd/-main args)))
 
 (defn refresh []

@@ -6,7 +6,6 @@
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.find :as ns-find]
    [com.biffweb :as biff]
-   [com.biffweb.protocols :as biff.proto]
    [com.wsscode.pathom3.connect.operation :as pco]
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
    [malli.core :as malli]
@@ -102,12 +101,12 @@
                 (mapv :xt/id inputs)])))
 
 ;; TODO maybe use this somewhere
-(defn wrap-db-with-index [handler]
-  (fn [{:keys [biff/db] :as ctx}]
-    (if (satisfies? biff.proto/IndexDatasource db)
-      (handler ctx)
-      (with-open [db (biff/open-db-with-index ctx)]
-        (handler (assoc ctx :biff/db db))))))
+;; (defn wrap-db-with-index [handler]
+;;   (fn [{:keys [biff/db] :as ctx}]
+;;     (if (satisfies? biff.proto/IndexDatasource db)
+;;       (handler ctx)
+;;       (with-open [db (biff/open-db-with-index ctx)]
+;;         (handler (assoc ctx :biff/db db))))))
 
 (defn- find-modules [search-dirs]
   (->> search-dirs
