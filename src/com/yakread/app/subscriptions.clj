@@ -8,7 +8,7 @@
    [com.yakread.lib.route :as lib.route :refer [defget defpost-pathom href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]
-   [xtdb.api :as xt]))
+   [xtdb.api :as-alias xt]))
 
 (defpost-pathom unsubscribe
   [{:params/sub [:sub/id

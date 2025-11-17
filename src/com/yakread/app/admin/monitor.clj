@@ -3,7 +3,6 @@
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.route :as lib.route :refer [defget]]
-   [com.yakread.lib.ui :as ui]
    [taoensso.tufte :as tufte]))
 
 (declare page-route)

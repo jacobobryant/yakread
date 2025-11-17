@@ -1,13 +1,13 @@
 (ns com.yakread.app.admin.dashboard
   (:require
-   [clojure.string :as str]
    [clojure.java.shell :as sh]
    [com.yakread.lib.admin :as lib]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.route :as lib.route :refer [defget href]]
-   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.ui :as ui])
-  (:import [java.time ZonedDateTime ZoneId]))
+  (:import
+   [java.time ZoneId ZonedDateTime]))
 
 (defn past-30-days [now timezone]
   (let [today-zdt (ZonedDateTime/ofInstant now (ZoneId/of timezone))]

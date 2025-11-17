@@ -11,7 +11,8 @@
   [{:session/user [:xt/id]}
    {:params/item [:xt/id]}]
   (fn [{:keys [biff/db]} {:keys [session/user params/item]}]
-    {:status 204
+    ;; TODO
+    #_{:status 204
      :biff.pipe/next [:biff.pipe/tx]
      :biff.pipe.tx/input (when-not (biff/lookup-id
                                     db

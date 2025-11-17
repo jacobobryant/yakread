@@ -1,17 +1,13 @@
 (ns com.yakread.app.subscriptions.add
   (:require
-   [clojure.data.generators :as gen]
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb :as biff]
    [com.yakread.lib.content :as lib.content]
-   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.middleware :as lib.middle]
    [com.yakread.lib.pathom :as lib.pathom :refer [?]]
    [com.yakread.lib.route :refer [defget defpost href redirect]]
    [com.yakread.lib.rss :as lib.rss]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.lib.user :as lib.user]
-   [com.yakread.routes :as routes]
-   [xtdb.api :as xt]))
+   [com.yakread.routes :as routes]))
 
 (let [response (fn [success username]
                  {:status 303
@@ -21,12 +17,14 @@
   (defpost set-username
     :start
     (fn [{:keys [biff/db session params]}]
-      (let [username (lib.user/normalize-email-username (:username params))]
+      ;; TODO
+      #_(let [username (lib.user/normalize-email-username (:username params))]
         (cond
           (:user/email-username (xt/entity db (:uid session)))
           (response true nil)
 
           (or (empty? username)
+              ;; TODO
               (biff/lookup-id db :user/email-username username)
               (biff/lookup-id db :deleted-user/email-username-hash (lib.core/sha256 username)))
           (response false (:username params))
@@ -45,7 +43,8 @@
       (response (not exception) username))))
 
 (defn- subscribe-feeds-tx [db user-id feed-urls]
-  (let [url->feed (into {} (q db
+  ;; TODO
+  #_(let [url->feed (into {} (q db
                               '{:find [url feed]
                                 :in [[url ...]]
                                 :where [[feed :feed/url url]]}

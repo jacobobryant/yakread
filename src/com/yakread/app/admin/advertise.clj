@@ -1,14 +1,13 @@
 (ns com.yakread.app.admin.advertise
   (:require
-   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver ?]]
+   [clojure.tools.logging :as log]
+   [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.admin :as lib]
    [com.yakread.lib.icons :as lib.icons]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.pipeline :as pipe]
    [com.yakread.lib.route :as lib.route :refer [defget defpost href]]
-   [com.yakread.lib.ui :as ui]
-   [xtdb.api :as xt]
-   [clojure.tools.logging :as log])
+   [com.yakread.lib.ui :as ui])
   (:import
    [java.time ZonedDateTime]))
 

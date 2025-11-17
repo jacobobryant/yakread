@@ -5,8 +5,7 @@
    [com.yakread.lib.icons :as lib.icons]
    [com.yakread.lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.routes :as routes]
-   [xtdb.api :as xt]))
+   [com.yakread.routes :as routes]))
 
 (def home-head
   [[:link {:rel "preconnect" :href "https://fonts.googleapis.com"}]
@@ -287,7 +286,8 @@
     :get
     (fn home-page [{:keys [session biff/db query-string params yakread/analytics-snippet] :as ctx}]
       (if (and (not (:noredirect params))
-               (some->> (:uid session) (xt/entity db)))
+               ;; TODO
+               #_(some->> (:uid session) (xt/entity db)))
         {:status 303
          :headers {"location" (str (href routes/for-you) (when query-string "?") query-string)}}
         (ui/base-page

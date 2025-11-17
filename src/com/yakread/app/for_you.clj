@@ -12,6 +12,7 @@
                  user-id :user/id
                  rec-id :rec/id}]
   (when (and skip t)
+    ;; TODO
     (let [existing-skip (biff/lookup db :skip/user user-id :skip/timeline-created-at t)
           old-clicked (:skip/clicked existing-skip #{})
           new-clicked (conj old-clicked rec-id)]
@@ -64,6 +65,7 @@
                                         :rec/id ad-id
                                         :skip  skip
                                         :t t})
+                              ;; TODO
                               (when-not (biff/lookup-id db
                                                         :ad.click/user user-id
                                                         :ad.click/ad ad-id)

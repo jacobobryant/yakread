@@ -62,6 +62,7 @@
   :start
   (fn [{:keys [biff/db biff/secret params]}]
     (let [{:keys [session-id]} params
+          ;; TODO
           ad-id (biff/lookup-id db :ad/session-id session-id)]
       (if ad-id
         {:biff.pipe/next [(lib.pipe/http
