@@ -2,11 +2,10 @@
   (:require
    [clojure.java.io :as io]
    [clojure.tools.logging :as log]
-   [com.biffweb :refer [q]]
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pipeline :as pipe :refer [defpipe]]
-   [xtdb.api :as xt]))
+   [xtdb.api :as-alias xt]))
 
 (defpipe export-user-data
   :start
@@ -108,7 +107,8 @@
 
   :delete-email-batch
   (fn [{:keys [biff/db biff/job session ::email-ids]}]
-    (let [{:keys [user/id]} job
+    ;; TODO
+    #_(let [{:keys [user/id]} job
           email-ids (or email-ids
                         (q db
                            '{:find item

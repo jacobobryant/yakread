@@ -1,19 +1,14 @@
 (ns com.yakread.work.subscription
-  (:require [clojure.data.generators :as gen]
-            [clojure.string :as str]
-            [clojure.tools.logging :as log]
-            [com.biffweb :as biff :refer [q]]
-            [com.yakread.lib.content :as lib.content]
-            [com.yakread.lib.core :as lib.core]
-            [com.yakread.lib.pipeline :as lib.pipe]
-            [rum.core :as rum]
-            [xtdb.api :as xt])
-  (:import [org.jsoup Jsoup]))
+  (:require
+   [clojure.string :as str]
+   [com.yakread.lib.core :as lib.core]
+   [com.yakread.lib.pipeline :as lib.pipe]))
 
 (def ^:private epoch (java.time.Instant/ofEpochMilli 0))
 
 (defn- active-users [db now]
-  (let [t0 (.minusSeconds now (* 60 60 24 30 6))]
+  ;; TODO
+  #_(let [t0 (.minusSeconds now (* 60 60 24 30 6))]
     (reduce (fn [active where]
               (into active (q db
                               {:find 'user
@@ -35,7 +30,8 @@
   (lib.pipe/make
    :start
    (fn [{:keys [biff/db biff/now yakread.work.sync-all-feeds/enabled biff/queues]}]
-     (when (and enabled (= 0 (.size (:work.subscription/sync-feed queues))))
+     ;; TODO
+     #_(when (and enabled (= 0 (.size (:work.subscription/sync-feed queues))))
        (let [users (active-users db now)
              feed-ids (q db
                          {:find 'feed
@@ -68,7 +64,8 @@
    :start
    (fn [{:biff/keys [db base-url]
          {:keys [feed/id]} :biff/job}]
-     (let [{:feed/keys [url etag last-modified]} (xt/entity db id)]
+     ;; TODO
+     #_(let [{:feed/keys [url etag last-modified]} (xt/entity db id)]
        {:biff.pipe/next             [:com.yakread.pipe/remus :end]
         :biff.pipe/catch            :com.yakread.pipe/remus
         :com.yakread.pipe.remus/url url
@@ -88,7 +85,8 @@
                 biff.pipe/exception
                 com.yakread.pipe.remus/output]
          {feed-id :feed/id} :biff/job}]
-     (let [{:keys [title description image entries]} (:feed output)
+     ;; TODO
+     #_(let [{:keys [title description image entries]} (:feed output)
            {:keys [headers]} (:response output)
            feed-doc (into {}
                           (remove (comp nil? val))

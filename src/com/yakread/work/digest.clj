@@ -4,7 +4,7 @@
    [clojure.data.generators :as gen]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.operation :as pco :refer [?]]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]))
@@ -51,7 +51,8 @@
     ;; have the :work.digest/send-digest queue consumer check for the most recently sent digest for
     ;; each user and make sure it isn't within the past e.g. 6 hours. Probably doesn't matter
     ;; though.
-    (when (and enabled (= 0 (.size (:work.digest/prepare-digest queues))))
+    ;; TODO
+    #_(when (and enabled (= 0 (.size (:work.digest/prepare-digest queues))))
       (let [users (->> (q db '{:find (pull user [*])
                                :where [[user :user/email]]})
                        (filterv #(send-digest? ctx %))

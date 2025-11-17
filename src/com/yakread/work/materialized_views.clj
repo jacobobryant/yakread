@@ -1,10 +1,10 @@
 (ns com.yakread.work.materialized-views
   (:require
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.operation :as pco :refer [?]]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
-   [xtdb.api :as xt]))
+   [xtdb.api :as-alias xt]))
 
 (defpipe update-views
   :start
@@ -35,7 +35,8 @@
 
   :current-item
   (fn [{:biff/keys [db job]}]
-    (let [{:user-item/keys [user item viewed-at]} job
+    ;; TODO
+    #_(let [{:user-item/keys [user item viewed-at]} job
 
           {current-item :user-item/item
            current-item-viewed-at :user-item/viewed-at}
@@ -66,7 +67,8 @@
                              :mv.user/current-item new-current-item}])]}))))
 
 (defn- sub-id [db user-id item-id]
-  (let [{email-sub :item.email/sub
+  ;; TODO
+  #_(let [{email-sub :item.email/sub
          feed :item.feed/feed} (xt/entity db item-id)]
     (or email-sub
         (when feed

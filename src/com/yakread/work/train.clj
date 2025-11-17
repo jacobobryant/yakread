@@ -1,10 +1,11 @@
 (ns com.yakread.work.train
-  (:require [com.biffweb :as biff :refer [q]]
-            [com.yakread.lib.core :as lib.core]
-            [com.yakread.lib.item :as lib.item]
-            [com.yakread.lib.spark :as lib.spark]
-            [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
-            [clojure.tools.logging :as log]))
+  (:require
+   [clojure.tools.logging :as log]
+   [com.biffweb :as biff]
+   [com.yakread.lib.core :as lib.core]
+   [com.yakread.lib.item :as lib.item]
+   [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
+   [com.yakread.lib.spark :as lib.spark]))
 
 (defn retrain [{:keys [yakread/model] :as ctx}]
   (reset! model (lib.spark/new-model ctx)))
@@ -33,7 +34,8 @@
 (defpipe queue-add-candidate
   :start
   (fn [{:keys [biff/db biff/queues yakread.work.queue-add-candidate/enabled]}]
-    (when (and enabled (= 0 (.size (:work.train/add-candidate queues))))
+    ;; TODO
+    #_(when (and enabled (= 0 (.size (:work.train/add-candidate queues))))
       (let [urls (q db
                     '{:find url
                       :timeout 120000
