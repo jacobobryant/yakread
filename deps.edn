@@ -27,21 +27,26 @@
                                              :exclusions [org.clojure/clojurescript]}
         throttler/throttler                 {:mvn/version "1.0.1"}
         metosin/malli                       {:mvn/version "0.16.3"}
-        oauth/oauth.one                     {:mvn/version "0.7.0"}
         org.clojure/clojure                 {:mvn/version "1.12.0"}
         org.subethamail/subethasmtp         {:mvn/version "3.1.7"}
         remus/remus                         {:mvn/version "0.2.2"}
         com.taoensso/nippy                  {:mvn/version "3.2.0"}
         com.taoensso/tufte                  {:mvn/version "2.6.3"}
         babashka/process                    {:mvn/version "0.1.8"}
-        com.novemberain/pantomime           {:mvn/version "2.11.0"}
         org.clojure/data.csv                {:mvn/version "1.0.0"}
         org.jsoup/jsoup                     {:mvn/version "1.11.3"}
         com.stripe/stripe-java              {:mvn/version "22.10.0"}
         cld/cld                             {:mvn/version "0.1.0"}
+
+        ;; org.bouncycastle/bcprov-jdk15on conflicts with the jdk18on version pulled in by Biff (via
+        ;; Buddy)
+        oauth/oauth.one                     {:mvn/version "0.7.0"
+                                             :exclusions [org.bouncycastle/bcprov-jdk15on]}
+        com.novemberain/pantomime           {:mvn/version "2.11.0"
+                                             :exclusions [org.bouncycastle/bcprov-jdk15on]}
+
         org.apache.spark/spark-core_2.13    {:mvn/version "3.5.5"}
         org.apache.spark/spark-mllib_2.13   {:mvn/version "3.5.5"}
-        ring/ring-jetty-adapter             {:mvn/version "1.13.0"}
         potemkin/potemkin                   {:mvn/version "0.4.6"}
         io.github.tonsky/fast-edn           {:mvn/version "1.1.3"}
         org.clojure/java.classpath          {:mvn/version "1.0.0"}

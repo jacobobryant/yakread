@@ -4,6 +4,7 @@
    [com.biffweb :as biff]
    [ring.adapter.jetty :as jetty]))
 
+;; TODO can we go back to using biff/use-jetty ?
 (defn use-jetty [{:biff/keys [host port handler]
                   :or {host "localhost"
                        port 8080}
