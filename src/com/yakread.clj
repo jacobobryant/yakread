@@ -6,9 +6,10 @@
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.repl :as tn-repl]
    [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
+   [com.biffweb.experimental.auth :as biffx-auth]
    [com.wsscode.pathom3.connect.indexes :as pci]
    [com.wsscode.pathom3.connect.planner :as pcp]
-   ;;[com.yakread.lib.auth :as lib.auth]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.email :as lib.email]
    [com.yakread.lib.jetty :as lib.jetty]
@@ -38,13 +39,9 @@
 
 (def modules
   (concat modules/modules
-          ;; TODO
-          [#_(lib.auth/module
-              #:biff.auth{:app-path "/"
-                          :email-validator lib.auth/email-valid?
-                          :link-expire-minutes (* 60 24 7)
-                          :allowed-redirects #{"/"
-                                               (href routes/for-you)}})]))
+          [(biffx-auth/module
+            #:biff.auth{:app-path (href routes/for-you)
+                        :check-state false})]))
 
 (def router (reitit-ring/router
              [["" {:middleware lib.mid/default-site-middleware}
@@ -149,11 +146,11 @@
 (def components
   [biff/use-aero-config
    use-error-reporting
-   ;;biff/use-xt
-   lib.spark/use-spark
+   biffx/use-xtdb2
+   ;;lib.spark/use-spark
    biff/use-queues
-   ;;biff/use-tx-listener
-   lib.jetty/use-jetty
+   biffx/use-xtdb2-listener
+   biff/use-jetty
    biff/use-chime
    biff/use-beholder
    lib.smtp/use-server])

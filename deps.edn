@@ -3,14 +3,14 @@
                                              ;; indexes branch
                                              ;;:git/sha "7836079fc64a6334ea5a43e5e92bcbd7faa1d300"
                                              ;; xtdb2 branch
-                                             :git/sha "ff0f2294206d1fb8f33bc0acd79c0247c95cb9b2"
+                                             :git/sha "cbc0be34393813ccdf1b15711b416352135025ff"
                                              :exclusions [com.xtdb/xtdb-core
                                                           com.xtdb/xtdb-jdbc
                                                           com.xtdb/xtdb-rocksdb
                                                           org.postgresql/postgresql]}
-        com.xtdb/xtdb-api                   {:mvn/version "2.x-SNAPSHOT"}
-        com.xtdb/xtdb-aws                   {:mvn/version "2.x-SNAPSHOT"}
-        com.xtdb/xtdb-core                  {:mvn/version "2.x-SNAPSHOT"}
+        com.xtdb/xtdb-api                   {:mvn/version "2.1.0-rc0"}
+        com.xtdb/xtdb-aws                   {:mvn/version "2.1.0-rc0"}
+        com.xtdb/xtdb-core                  {:mvn/version "2.1.0-rc0"}
         com.zaxxer/HikariCP                 {:mvn/version "7.0.2"}
 
         vouch-opensource/fugato             {:git/url "https://github.com/vouch-opensource/fugato"

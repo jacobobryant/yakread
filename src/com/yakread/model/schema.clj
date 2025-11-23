@@ -1,4 +1,5 @@
-(ns com.yakread.model.schema)
+(ns com.yakread.model.schema
+  (:require [tick.core :as tick]))
 
 (defn inherit [base-schema & map-args]
   [:merge base-schema (into [:map {:closed true}] map-args)])
@@ -12,35 +13,36 @@
   {::string  [:string {:max 2000}]
    ::day     [:enum :sunday :monday :tuesday :wednesday :thursday :friday :saturday]
    ::cents   [:int {:biff.form/parser #(Math/round (* 100 (Float/parseFloat %)))}]
+   ::zdt     [:fn tick/zoned-date-time?]
 
    :user [:map {:closed true}
           [:xt/id                     :uuid]
           [:user/email                ::string]
           [:user/roles              ? [:set [:enum :admin]]]
-          [:user/joined-at          ? :time/instant]
+          [:user/joined-at          ? ::zdt]
           [:user/digest-days        ? [:set ::day]]
           [:user/send-digest-at     ? :time/local-time]
           [:user/timezone           ? :time/zone-id]
-          [:user/digest-last-sent   ? :time/instant]
+          [:user/digest-last-sent   ? ::zdt]
           [:user/from-the-sample    ? :boolean]
           ;; When the user views an item, when possible, open the original URL in a new tab instead
           ;; of displaying the item within Yakread.
           [:user/use-original-links ? :boolean]
           ;; The user reported our emails as spam or emails to them hard-bounced, so don't send them
           ;; any more emails.
-          [:user/suppressed-at      ? :time/instant]
+          [:user/suppressed-at      ? ::zdt]
           ;; Used for email subscriptions (<username>@yakread.com)
           [:user/email-username     ? ::string]
           ;; Stripe ID
           [:user/customer-id        ? :string]
           [:user/plan               ? [:enum :quarter :annual]]
-          [:user/cancel-at          ? :time/instant]]
+          [:user/cancel-at          ? ::zdt]]
 
    :sub/base  [:map {:closed true}
                [:xt/id                    :uuid]
                [:sub/user       (r :user) :uuid]
-               [:sub/created-at           :time/instant]
-               [:sub/pinned-at  ?         :time/instant]]
+               [:sub/created-at           ::zdt]
+               [:sub/pinned-at  ?         ::zdt]]
    :sub/feed  (inherit :sub/base
                        [:sub.feed/feed (r :feed) :uuid])
    ;; :sub-email is automatically created when the user receives an email with a new From field.
@@ -49,19 +51,19 @@
                        ;; If the user unsubscribes, instead of deleting the :sub-email, we set this
                        ;; flag. Then even if the newsletter sends more emails, we won't accidentally
                        ;; re-subscribe them.
-                       [:sub.email/unsubscribed-at ? :time/instant])
+                       [:sub.email/unsubscribed-at ? ::zdt])
    :sub/any   [:or :sub/feed :sub/email]
 
    :item/base  [:map {:closed true}
                 [:xt/id               :uuid]
-                [:item/ingested-at    :time/instant]
+                [:item/ingested-at    ::zdt]
                 [:item/title        ? ::string]
                 [:item/url          ? ::string]
                 [:item/redirect-urls ? [:set ::string]]
                 ;; If the content is <= 1000 chars, put it in XT, otherwise, put it in S3
                 [:item/content      ? ::string]
                 [:item/content-key  ? :uuid]
-                [:item/published-at ? :time/instant]
+                [:item/published-at ? ::zdt]
                 [:item/excerpt      ? ::string]
                 [:item/author-name  ? ::string]
                 [:item/author-url   ? ::string]
@@ -96,7 +98,7 @@
    :feed [:map {:closed true}
           [:xt/id                :uuid]
           [:feed/url             ::string]
-          [:feed/synced-at     ? :time/instant]
+          [:feed/synced-at     ? ::zdt]
           [:feed/title         ? ::string]
           [:feed/description   ? ::string]
           [:feed/image-url     ? ::string]
@@ -115,31 +117,31 @@
                [:xt/id                                  :uuid]
                [:user-item/user          (r :user)      :uuid]
                [:user-item/item          (r :item/any)  :uuid]
-               [:user-item/viewed-at     ?              :time/instant]
+               [:user-item/viewed-at     ?              ::zdt]
                ;; User clicked "mark all as read"
-               [:user-item/skipped-at    ?              :time/instant]
-               [:user-item/bookmarked-at ?              :time/instant]
-               [:user-item/favorited-at  ?              :time/instant]
+               [:user-item/skipped-at    ?              ::zdt]
+               [:user-item/bookmarked-at ?              ::zdt]
+               [:user-item/favorited-at  ?              ::zdt]
                [:user-item/position      (?r :position) :uuid]
                ;; User clicked thumbs-down. Mutually exclusive with :user-item/favorited-at
-               [:user-item/disliked-at   ?              :time/instant]
+               [:user-item/disliked-at   ?              ::zdt]
                ;; This item was recommended in For You and the user reported it.
-               [:user-item/reported-at   ?              :time/instant]
+               [:user-item/reported-at   ?              ::zdt]
                [:user-item/report-reason ?              ::string]]
 
    ;; Digest emails
    :digest [:map {:closed true}
             [:xt/id                             :uuid]
             [:digest/user     (r :user)         :uuid]
-            [:digest/sent-at                    :time/instant]
             [:digest/subject  (?r :item/any)    :uuid]
+            [:digest/sent-at                    ::zdt]
             [:digest/ad       (?r :ad)          :uuid]
             [:digest/icymi    (?r :item/any)    [:vector :uuid]]
             [:digest/discover (?r :item/direct) [:vector :uuid]]]
 
    :bulk-send [:map {:closed true}
                [:xt/id :uuid]
-               [:bulk-send/sent-at                   :time/instant]
+               [:bulk-send/sent-at                   ::zdt]
                [:bulk-send/payload-size              :int]
                [:bulk-send/mailersend-id             :string]
                [:bulk-send/digests       (r :digest) [:vector :uuid]]]
@@ -149,8 +151,8 @@
    :skip [:map {:closed true}
           [:xt/id                                       :uuid]
           [:skip/user                (r :user)          :uuid]
-          [:skip/timeline-created-at                    :time/instant]
           [:skip/items               (r :timeline/item) [:set :uuid]]
+          [:skip/timeline-created-at                    ::zdt]
           ;; Used to remove items from :skip/items if they get clicked later. Should NOT be used to
           ;; determine if an item/ad has ever been clicked/viewed.
           [:skip/clicked             (r :timeline/item) [:set :uuid]]]
@@ -166,7 +168,7 @@
         [:xt/id                       :uuid]
         [:ad/user           (r :user) :uuid]
         [:ad/approve-state            [:enum :pending :approved :rejected]]
-        [:ad/updated-at               :time/instant]
+        [:ad/updated-at               ::zdt]
         [:ad/balance                  ::cents]
         ;; Balance accrued from ad clicks in the past 7 days
         [:ad/recent-cost              ::cents] ; remove?
@@ -194,7 +196,7 @@
               [:xt/id                          :uuid]
               [:ad.click/user        (r :user) :uuid]
               [:ad.click/ad          (r :ad)   :uuid]
-              [:ad.click/created-at            :time/instant]
+              [:ad.click/created-at            ::zdt]
               [:ad.click/cost                  ::cents]
               [:ad.click/source                [:enum :web :email]]]
 
@@ -204,7 +206,7 @@
                ;; Are we charging their card or giving them free ad credit?
                [:ad.credit/source                [:enum :charge :manual]]
                [:ad.credit/amount                ::cents]
-               [:ad.credit/created-at            :time/instant]
+               [:ad.credit/created-at            ::zdt]
                ;; We store :xt/id in the Stripe payment intent metadata and use it to look up the
                ;; charge status.
                [:ad.credit/charge-status ?       [:enum :pending :confirmed :failed]]]
@@ -214,7 +216,7 @@
             [:mv.sub/sub            (r :sub) :uuid]
             [:mv.sub/affinity-low   ?        :double]
             [:mv.sub/affinity-high  ?        :double]
-            [:mv.sub/last-published ?        :time/instant]
+            [:mv.sub/last-published ?        ::zdt]
             [:mv.sub/unread         ?        :int]
             [:mv.sub/read           ?        :int]]
 
