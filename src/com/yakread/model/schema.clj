@@ -53,6 +53,7 @@
                        ;; re-subscribe them.
                        [:sub.email/unsubscribed-at ? ::zdt])
    :sub/any   [:or :sub/feed :sub/email]
+   :sub       :sub/any
 
    :item/base  [:map {:closed true}
                 [:xt/id               :uuid]
@@ -82,7 +83,7 @@
                         ;; The RSS <guid> / Atom <id> field.
                         [:item.feed/guid ? ::string])
    :item/email (inherit :item/base
-                        [:item.email/sub                   (r :sub/email) :uuid]
+                        [:item.email/sub                   (r :sub)       :uuid]
                         ;; For the raw email -- processed email goes in :item/content-key
                         [:item.email/raw-content-key                      :uuid]
                         [:item.email/list-unsubscribe      ?              [:string {:max 5000}]]
@@ -94,6 +95,7 @@
                          [:item/doc-type [:= :item/direct]]
                          [:item.direct/candidate-status ? [:enum :ingest-failed :blocked :approved]])
    :item/any    [:or :item/feed :item/email :item/direct]
+   :item        :item/any
 
    :feed [:map {:closed true}
           [:xt/id                :uuid]
@@ -116,7 +118,7 @@
    :user-item [:map {:closed true}
                [:xt/id                                  :uuid]
                [:user-item/user          (r :user)      :uuid]
-               [:user-item/item          (r :item/any)  :uuid]
+               [:user-item/item          (r :item)      :uuid]
                [:user-item/viewed-at     ?              ::zdt]
                ;; User clicked "mark all as read"
                [:user-item/skipped-at    ?              ::zdt]
@@ -133,17 +135,19 @@
    :digest [:map {:closed true}
             [:xt/id                             :uuid]
             [:digest/user     (r :user)         :uuid]
-            [:digest/subject  (?r :item/any)    :uuid]
             [:digest/sent-at                    ::zdt]
+            [:digest/subject  (?r :item)        :uuid]
             [:digest/ad       (?r :ad)          :uuid]
-            [:digest/icymi    (?r :item/any)    [:vector :uuid]]
-            [:digest/discover (?r :item/direct) [:vector :uuid]]]
+            ;; TODO use a join table
+            [:digest/icymi    (?r :item)        [:vector :uuid]]
+            [:digest/discover (?r :item)        [:vector :uuid]]]
 
    :bulk-send [:map {:closed true}
                [:xt/id :uuid]
                [:bulk-send/sent-at                   ::zdt]
                [:bulk-send/payload-size              :int]
                [:bulk-send/mailersend-id             :string]
+               ;; TODO use a join table, or update :digest records
                [:bulk-send/digests       (r :digest) [:vector :uuid]]]
 
    ;; When the user clicks on item in For You, any previous items they scrolled past get added to a
@@ -151,11 +155,13 @@
    :skip [:map {:closed true}
           [:xt/id                                       :uuid]
           [:skip/user                (r :user)          :uuid]
-          [:skip/items               (r :timeline/item) [:set :uuid]]
           [:skip/timeline-created-at                    ::zdt]
+          ;; TODO use a join table
+          [:skip/items               (r :timeline-item) [:set :uuid]]
           ;; Used to remove items from :skip/items if they get clicked later. Should NOT be used to
           ;; determine if an item/ad has ever been clicked/viewed.
-          [:skip/clicked             (r :timeline/item) [:set :uuid]]]
+          ;; TODO use a join table
+          [:skip/clicked             (r :timeline-item) [:set :uuid]]]
 
    ;; Split this out of :user-item because it'll change very frequently.
    :position [:map {:closed true}
@@ -163,6 +169,7 @@
               [:position/value :int]]
 
    :timeline/item [:or :item/any :ad]
+   :timeline-item :timeline/item
 
    :ad [:map {:closed true}
         [:xt/id                       :uuid]
@@ -199,6 +206,7 @@
               [:ad.click/created-at            ::zdt]
               [:ad.click/cost                  ::cents]
               [:ad.click/source                [:enum :web :email]]]
+   :ad-click :ad.click
 
    :ad.credit [:map {:closed true}
                [:xt/id                           :uuid]
@@ -210,6 +218,7 @@
                ;; We store :xt/id in the Stripe payment intent metadata and use it to look up the
                ;; charge status.
                [:ad.credit/charge-status ?       [:enum :pending :confirmed :failed]]]
+   :ad-credit :ad.credit
 
    :mv.sub [:map {:closed true}
             [:xt/id                          :uuid]
@@ -219,11 +228,13 @@
             [:mv.sub/last-published ?        ::zdt]
             [:mv.sub/unread         ?        :int]
             [:mv.sub/read           ?        :int]]
+   :mv-sub :mv.sub
 
    :mv.user [:map {:closed true}
              [:xt/id :uuid]
              [:mv.user/user         (r :user)      :uuid]
-             [:mv.user/current-item (?r :item/any) :uuid]]
+             [:mv.user/current-item (?r :item)     :uuid]]
+   :mv-user :mv.user
 
    :deleted-user [:map {:closed true}
                   [:xt/id                            :uuid]

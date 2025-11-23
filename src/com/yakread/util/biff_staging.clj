@@ -6,12 +6,14 @@
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.find :as ns-find]
    [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco]
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
    [malli.core :as malli]
    [malli.registry :as malr]
    ;;[xtdb.api :as xt]
-   [aero.core :as aero]))
+   [aero.core :as aero]
+   [com.wsscode.misc.coll :as wss-coll]))
 
 (defn doc-asts [{:keys [registry] :as malli-opts}]
   (for [schema-k (keys (malr/schemas (:registry malli-opts)))
@@ -29,76 +31,68 @@
 
 (defn field-asts [malli-opts]
   (into {}
-        (for [ast (doc-asts malli-opts)
-              [k m] (:keys ast)]
-          [k m])))
+        (mapcat :keys)
+        (doc-asts malli-opts)))
 
-(def schema-info
-  (memoize
-   (fn [malli-opts]
-     (let [asts      (doc-asts malli-opts)
-           all-attrs (->> asts
-                          (mapcat (comp keys :keys))
-                          set)
-           ref-attrs (->> asts
-                          (mapcat :keys)
-                          (keep (fn [[k {:keys [properties]}]]
-                                  (when (:biff/ref properties)
-                                    k)))
-                          set)]
-       {:all-attrs all-attrs
-        :ref-attrs ref-attrs}))))
+(defn- attr-union [m1 m2]
+  (let [shared-keys (into [] (filter #(contains? m2 %)) (keys m1))]
+    (when-some [conflicting-attr (first (filter #(not= (m1 %) (m2 %)) shared-keys))]
+      (throw (ex-info "An attribute has a conflicting definition"
+                      {:attr conflicting-attr
+                       :definition-1 (m1 conflicting-attr)
+                       :definition-2 (m2 conflicting-attr)})))
+    (merge m1 m2)))
 
-(defn joinify [malli-opts doc]
-  (let [{:keys [ref-attrs]} (schema-info malli-opts)]
-    (->> (keys doc)
-         (filterv ref-attrs)
-         (reduce (fn [doc k]
-                   (update doc k #(hash-map :xt/id %)))
-                 doc))))
+(defn schema-info [malli-opts]
+  (into {}
+        (keep (fn [schema-k]
+                (let [attrs (volatile! {})]
+                  (some-> (try (malli/deref-recursive schema-k malli-opts) (catch Exception _))
+                          (malli/walk (fn [schema _ _ _]
+                                        (let [ast (malli/ast schema)]
+                                          (when (and (= (:type ast) :map)
+                                                     (contains? (:keys ast) :xt/id))
+                                            (vswap! attrs attr-union (:keys ast)))))))
+                  (when (not-empty @attrs)
+                    [schema-k @attrs]))))
+        (keys (malr/schemas (:registry malli-opts)))))
 
-(defn pull-resolvers [malli-opts]
-  ;; TODO
-  []
-  #_(let [{:keys [all-attrs ref-attrs]} (schema-info malli-opts)]
-    (concat
-     [(pco/resolver `entity-resolver
-                    {::pco/input [:xt/id]
-                     ::pco/output (vec (for [k all-attrs]
-                                         (if (ref-attrs k)
-                                           {k [:xt/id]}
-                                           k)))}
-                    (fn [{:keys [biff/db]} {:keys [xt/id]}]
-                      (joinify malli-opts (xt/entity db id))))]
-     (for [attr ref-attrs
-           :let [attr (keyword (namespace attr) (str "_" (name attr)))]]
-       (pco/resolver (symbol (subs (str attr) 1))
-                     {::pco/input [:xt/id]
-                      ::pco/output [{attr [:xt/id]}]}
-                     (fn [{:keys [biff/db]} {:keys [xt/id]}]
-                       (update (xt/pull db [{attr [:xt/id]}] id)
-                               attr
-                               vec)))))))
-
-(comment
-
-  (require '[clojure.string :as str])
-
-  (defn ?s [n]
-    (str "(" (str/join ", " (repeat n "?")) ")"))
-
-  (defn columns-for [ks]
-    "...")
-
-  (pco/defresolver user-resolver [{:keys [biff/conn]} inputs]
-    {::pco/input [:xt/id]
-     ::pco/output [:user/email ,,,]
-     ::pco/batch? true}
-    (xt/q conn [(str "select "
-                     (columns-for [:user/email ,,,])
-                     " from users where _id in "
-                     (?s (count inputs)))
-                (mapv :xt/id inputs)])))
+(defn xtdb2-resolvers [malli-opts]
+  ;; TODO maybe add reverse resolvers too
+  (for [[schema attrs] (schema-info malli-opts)
+        :let [ref? (fn [attr]
+                     (boolean (get-in attrs [attr :properties :biff/ref])))
+              joinify (fn [[k v]]
+                        (if (ref? k)
+                          [k {:xt/id v}]
+                          [k v]))]
+        :when (not (qualified-keyword? schema))]
+    (pco/resolver (symbol "com.yakread.util.biff-staging"
+                          (str (name schema) "-xtdb2-resolver"))
+                  {::pco/input [:xt/id]
+                   ::pco/output (vec (for [k (keys attrs)
+                                           :when (not= k :xt/id)]
+                                       (if (ref? k)
+                                         {k [:xt/id]}
+                                         k)))
+                   ::pco/batch? true}
+                  (fn [{:keys [biff/conn] :as env} inputs]
+                    ;; TODO
+                    ;; - see if the `columns` stuff causes any issues, e.g. do we need to mess with
+                    ;;   the cache key. e.g. can we break it with a self-reference that requests
+                    ;;   additional columns.
+                    ;; - use a fixed db snapshot
+                    (let [expects (->> env
+                                       ::pcp/node
+                                       ::pcp/expects
+                                       keys)
+                          columns (into [:xt/id] (filter attrs) expects)]
+                      (->> (biffx/q conn
+                                    {:select columns
+                                     :from schema
+                                     :where [:in :xt/id (mapv :xt/id inputs)]})
+                           (mapv #(into {} (map joinify) %))
+                           (wss-coll/restore-order inputs :xt/id)))))))
 
 ;; TODO maybe use this somewhere
 ;; (defn wrap-db-with-index [handler]

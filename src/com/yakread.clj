@@ -83,7 +83,7 @@
                     (keep :schema modules))})
 
 (def pathom-env (pci/register (->> (mapcat :resolvers modules)
-                                   (concat (biffs/pull-resolvers malli-opts))
+                                   (concat (biffs/xtdb2-resolvers malli-opts))
                                    (mapv lib.pathom/wrap-debug))))
 
 (defn merge-context [{:keys [yakread/model
