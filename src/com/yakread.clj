@@ -81,6 +81,17 @@
                     (malli.u/schemas)
                     (keep :schema modules))})
 
+;; TODO pull into a lib function
+(doseq [schema-map (keep :schema modules)
+        k (keys schema-map)
+        :let [ex (try
+                   (malli/schema k malli-opts)
+                   nil
+                   (catch Exception e
+                     e))]]
+  (assert (nil? ex)
+          (str "Schema for " k " is invalid: " (pr-str (ex-data ex)))))
+
 (def pathom-env (pci/register (->> (mapcat :resolvers modules)
                                    (concat (biffs/xtdb2-resolvers malli-opts))
                                    (mapv lib.pathom/wrap-debug))))
