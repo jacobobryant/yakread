@@ -7,7 +7,7 @@
    [com.wsscode.pathom3.error :as p.error]
    [com.yakread.lib.datastar :as lib.d*]
    [com.yakread.lib.form :as lib.form]
-   [com.yakread.lib.route :refer [href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.routes :as routes]
    [ring.util.request :as ring-req]
    [rum.core :as rum]
@@ -138,4 +138,5 @@
    wrap-edn-json-params
    wrap-pathom-error
    lib.d*/wrap-sse-response
-   lib.form/wrap-parse-form])
+   lib.form/wrap-parse-form
+   lib.route/wrap-nippy-params])

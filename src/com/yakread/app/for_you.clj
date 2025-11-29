@@ -133,7 +133,7 @@
   (fn [_ {:keys [app.shell/app-shell]}]
     (app-shell
      {}
-     [:div#content.h-full (ui/lazy-load-spaced (href page-content-route {:show-continue true}))])))
+     [:div#content.h-full "hello there" #_(ui/lazy-load-spaced (href page-content-route {:show-continue true}))])))
 
 (def read-page-route
   ["/item/:item-id"

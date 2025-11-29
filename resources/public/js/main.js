@@ -103,7 +103,7 @@ function set_timezone(url, csrf_token) {
     },
     body: new URLSearchParams({
       '__anti-forgery-token': csrf_token,
-      ":user/timezone": Intl.DateTimeFormat().resolvedOptions().timeZone
+      ":user/timezone*": Intl.DateTimeFormat().resolvedOptions().timeZone
     }).toString()
   })
 }

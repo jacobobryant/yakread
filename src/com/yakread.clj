@@ -12,13 +12,12 @@
    [com.wsscode.pathom3.connect.planner :as pcp]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.email :as lib.email]
-   [com.yakread.lib.jetty :as lib.jetty]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.pathom :as lib.pathom]
    [com.yakread.lib.pipeline :as lib.pipeline]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.smtp :as lib.smtp]
-   [com.yakread.lib.spark :as lib.spark]
    [com.yakread.lib.ui :as ui]
    [com.yakread.modules :as modules]
    [com.yakread.routes :as routes]
@@ -97,6 +96,7 @@
                (some-> model deref)
                {:biff/router router
                 :biff.pipe/global-handlers lib.pipeline/global-handlers
+                :biff.fx/handlers fx/handlers
                 ;:biff/db (:biff/db snapshots)
                 ;:biff.index/snapshots snapshots
                 :biff/now (java.time.Instant/now)
@@ -164,6 +164,7 @@
                      :biff/send-email #'lib.email/send-email
                      :biff.beholder/on-save #'on-save
                      :biff.pipe/global-handlers lib.pipeline/global-handlers
+                     :biff.fx/handlers fx/handlers
                      ;;:biff.xtdb/tx-fns biff/tx-fns
                      :com.yakread/home-feed-cache (atom {})
                      lib.pathom/plan-cache-kw (atom {})

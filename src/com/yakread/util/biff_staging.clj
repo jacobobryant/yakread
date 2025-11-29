@@ -29,11 +29,6 @@
                    (contains? (:keys ast) :xt/id))]
     (assoc-in ast [:properties :schema] schema-k)))
 
-(defn field-asts [malli-opts]
-  (into {}
-        (mapcat :keys)
-        (doc-asts malli-opts)))
-
 (defn- attr-union [m1 m2]
   (let [shared-keys (into [] (filter #(contains? m2 %)) (keys m1))]
     (when-some [conflicting-attr (first (filter #(not= (m1 %) (m2 %)) shared-keys))]
@@ -56,6 +51,9 @@
                   (when (not-empty @attrs)
                     [schema-k @attrs]))))
         (keys (malr/schemas (:registry malli-opts)))))
+
+(defn field-asts [malli-opts]
+  (apply merge (vals (schema-info malli-opts))))
 
 (defn xtdb2-resolvers [malli-opts]
   ;; TODO maybe add reverse resolvers too

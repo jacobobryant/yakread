@@ -213,6 +213,7 @@
                                 {:method "GET"}))})
 
 (defn tx [input-tx]
+  (throw (ex-info "unsupported operation" {}))
   {:biff.pipe/current :biff.pipe/tx
    :biff.pipe.tx/input input-tx})
 

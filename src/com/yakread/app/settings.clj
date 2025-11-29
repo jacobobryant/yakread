@@ -4,6 +4,7 @@
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
+   [com.yakread.lib.fx :as fx :refer [defroute defroute-pathom]]
    [com.yakread.lib.form :as lib.form]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.pipeline :as lib.pipe]
@@ -26,14 +27,11 @@
 (declare page)
 (declare account-deleted)
 
-(defpost set-timezone
-  :start
+(defroute set-timezone :post
   (fn [{:keys [session biff.form/params]}]
-    {:biff.pipe/next [(lib.pipe/tx
-                       [{:db/doc-type :user
-                         :xt/id (:uid session)
-                         :db/op :update
-                         :user/timezone (:user/timezone params)}])]
+    {:biff.fx/submit-tx [[:patch-docs :user
+                          {:xt/id (:uid session)
+                           :user/timezone* (:user/timezone* params)}]]
      :status 204}))
 
 (defpost save-settings
