@@ -286,8 +286,8 @@
     :get
     (fn home-page [{:keys [session biff/db query-string params yakread/analytics-snippet] :as ctx}]
       (if (and (not (:noredirect params))
-               ;; TODO
-               #_(some->> (:uid session) (xt/entity db)))
+               ;; TODO check some kind of session cache or something
+               (some? (:uid session)))
         {:status 303
          :headers {"location" (str (href routes/for-you) (when query-string "?") query-string)}}
         (ui/base-page

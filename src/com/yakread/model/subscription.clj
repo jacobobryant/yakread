@@ -139,7 +139,7 @@
         sub (when (some? sub-id)
               ;; TODO
               #_(xt/entity db sub-id))]
-    (when (and sub (= (:uid session) (:sub/user sub)))
+    #_(when (and sub (= (:uid session) (:sub/user sub)))
       {:params/sub (biffs/joinify @malli-opts sub)})))
 
 (defresolver params-checked [{:keys [biff/db biff/malli-opts session form-params params]} _]
