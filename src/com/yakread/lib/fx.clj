@@ -1,0 +1,182 @@
+(ns com.yakread.lib.fx
+  (:refer-clojure :exclude [spit])
+  (:require
+   [clojure.java.io :as io]
+   [clojure.java.shell :as shell]
+   [cheshire.core :as cheshire]
+   [clj-http.client :as http]
+   [clojure.data.generators :as gen]
+   [clojure.tools.logging :as log]
+   [clojure.walk :as walk]
+   [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
+   [com.yakread.lib.datastar :as lib.d*]
+   [com.yakread.lib.error :as lib.error]
+   [com.yakread.lib.pathom :as lib.pathom]
+   [com.yakread.lib.s3 :as lib.s3]
+   [remus]
+   ;;[xtdb.api :as xt]
+   [taoensso.tufte :refer [p]]))
+
+;; TODO add observability/monitoring stuff
+;; and exception catching stuff
+(defn machine [& {:as state->transition-fn}]
+  (fn run
+    ([ctx state]
+     ((or (get state->transition-fn state)
+          (throw (ex-info (str "Invalid state: " state) {})))
+      ctx))
+    ([{:biff.fx/keys [handlers] :as ctx}]
+     (loop [ctx ctx
+            state :start
+            trace []]
+       (let [t-fn (or (get state->transition-fn state)
+                      (throw (ex-info (str "Invalid state: " state) {})))
+             result (t-fn ctx)
+             results (if (map? result)
+                       [result]
+                       result)
+             results (mapv (fn [m]
+                             (let [state-output (apply dissoc m (keys handlers))
+                                   fx-input     (select-keys m (keys handlers))
+                                   fx-output    (into {}
+                                                      (map (fn [[k v]]
+                                                             [k ((get handlers k)
+                                                                 ctx
+                                                                 v)]))
+                                                      fx-input)]
+                               {:biff.fx/state-output state-output
+                                :biff.fx/fx-input fx-input
+                                :biff.fx/fx-output fx-output}))
+                           results)
+             trace (conj trace
+                         {:biff.fx/state state
+                          :biff.fx/results results})
+             {:biff.fx/keys [state-output fx-output fx-input]} (apply merge-with merge results)
+             ctx (merge ctx
+                        fx-output
+                        state-output
+                        {:biff.fx/trace trace
+                         :biff.fx/fx-input fx-input})
+             next-state (:biff.fx/next state-output)]
+         (if next-state
+           (recur ctx next-state trace)
+           state-output))))))
+
+(defn safe-for-url? [s]
+  (boolean (re-matches #"[a-zA-Z0-9-_.+!*]+" s)))
+
+(defn- autogen-endpoint [ns* sym]
+  (let [href (str "/_biff/api/" ns* "/" sym)]
+    (assert (safe-for-url? (str sym)) (str "URL segment would contain invalid characters: " sym))
+    (assert (safe-for-url? (str ns*)) (str "URL segment would contain invalid characters: " ns*))
+    href))
+
+(defmacro defroute [sym & args]
+  (let [[uri & kvs] (if (string? (first args))
+                      args
+                      (into [nil] args))
+        uri (or uri (autogen-endpoint *ns* sym))
+        all-methods [:get :post :put :delete :head :options :trace :patch :connect]
+        ]
+    `(let [params#  (array-map ~@kvs)
+           machine# (machine
+                     (merge {:start (fn [{:keys [~'request-method]}]
+                                      {:biff.fx/next ~'request-method})}
+                            params#))]
+       (def ~sym
+         [~uri
+          (into {}
+                (comp (filter params#)
+                      (map (fn [method#]
+                             [method# machine#])))
+                ~all-methods)]))))
+
+(defmacro defroute-pathom [sym & args]
+  (let [[uri method query f & kvs] (if (string? (first args))
+                                     args
+                                     (into [nil] args))
+        uri (or uri (autogen-endpoint *ns* sym))]
+    `(let [method# ~method
+           params# (apply array-map ~kvs)
+           f# ~f
+           machine# (machine
+                     (merge {:start (fn [_]
+                                      {:biff.fx/pathom ~query
+                                       :biff.fx/next method#})
+                             method# (fn [ctx#]
+                                       (f# ctx# (:biff.fx/pathom ctx#)))}
+                            params#))]
+       (def ~sym
+         [~uri {method# machine#}]))))
+
+(def handlers
+  {:biff.fx/http (fn [ctx request]
+                   (-> (http/request request)
+                       (assoc :url (:url request))
+                       (dissoc :http-client)))
+   :biff.fx/email (fn [{:keys [biff/send-email] :as ctx} input]
+                    ;; This can be used in cases where we want a generic email interface not tied
+                    ;; to a particular provider. For sending digests we need mailersend-specific
+                    ;; features, so we use :biff.pipe/http there instead.
+                    (send-email ctx input))
+   ;; TODO
+   ;;:biff.pipe/tx (fn [{:biff.pipe.tx/keys [input retry] :as ctx}]
+   ;;                (assoc ctx :biff.pipe.tx/output
+   ;;                       (biff/submit-tx
+   ;;                         (cond-> ctx
+   ;;                           (some? retry) (assoc :biff.xtdb/retry retry))
+   ;;                         (replace-db-now input))))
+   :biff.fx/submit-tx biffx/submit-tx
+   :biff.fx/pathom (fn [ctx input]
+                     (let [{:keys [entity query]} (if (map? input)
+                                                    input
+                                                    {:query input})]
+                       (lib.pathom/process ctx (or entity {}) query)))
+   :biff.fx/slurp (fn [ctx file]
+                    (slurp file))
+   :biff.fx/queue (fn [ctx {:keys [id job wait-for-result]}]
+                    (cond-> ((if wait-for-result
+                               biff/submit-job-for-result
+                               biff/submit-job)
+                             ctx
+                             id
+                             job)
+                      wait-for-result deref))
+   
+   ;; TODO
+   ;;:biff.pipe/s3 (fn [{:keys [biff.pipe.s3/input] :as ctx}]
+   ;;                (assoc ctx :biff.pipe.s3/output (lib.s3/request ctx input)))
+   ;;:biff.pipe.s3/presigned-url (fn [{:keys [biff.pipe.s3.presigned-url/input] :as ctx}]
+   ;;                              (assoc ctx :biff.pipe.s3.presigned-url/output (lib.s3/presigned-url ctx input)))
+   ;;:biff.pipe/sleep (fn [{:keys [biff.pipe.sleep/ms] :as ctx}]
+   ;;                   (Thread/sleep (long ms))
+   ;;                   ctx)
+   ;;:biff.pipe/drain-queue (fn [{:biff/keys [job queue] :as ctx}]
+   ;;                         (let [ll (java.util.LinkedList.)]
+   ;;                           (.drainTo queue ll)
+   ;;                           (assoc ctx :biff/jobs (into [job] ll))))
+   ;;:biff.pipe/spit (fn [{:biff.pipe.spit/keys [file content] :as ctx}]
+   ;;                  (io/make-parents (io/file file))
+   ;;                  (clojure.core/spit file content)
+   ;;                  ctx)
+   ;;:biff.pipe/write (fn [{:biff.pipe.write/keys [file content] :as ctx}]
+   ;;                   (io/make-parents (io/file file))
+   ;;                   (with-open [w (io/writer file)]
+   ;;                     (if (string? content)
+   ;;                       (.write w content)
+   ;;                       (doseq [line content]
+   ;;                         (.write w line)
+   ;;                         (.write line "\n"))))
+   ;;                   ctx)
+   ;;:biff.pipe/temp-dir (fn [{:keys [biff.pipe.temp-dir/prefix] :or {prefix "biff"} :as ctx}]
+   ;;                      (assoc ctx
+   ;;                             :biff.pipe.temp-dir/path
+   ;;                             (.toFile (java.nio.file.Files/createTempDirectory prefix (into-array java.nio.file.attribute.FileAttribute [])))))
+   ;;:biff.pipe/delete-files (fn [{:keys [biff.pipe.delete-files/path] :as ctx}]
+   ;;                          (run! io/delete-file (reverse (file-seq (io/file path))))
+   ;;                          ctx)
+   ;;:biff.pipe/shell (fn [{:keys [biff.pipe.shell/args] :as ctx}]
+   ;;                   (assoc ctx :biff.pipe.shell/output (apply shell/sh args)))
+   
+   })
