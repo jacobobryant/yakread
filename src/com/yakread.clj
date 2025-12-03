@@ -33,7 +33,7 @@
    [taoensso.telemere.tools-logging :as tel.tl]
    [time-literals.read-write :as time-literals]
    ;[com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
-   )
+   [tick.core :as tick])
   (:gen-class))
 
 (def modules
@@ -110,7 +110,7 @@
                 :biff.fx/handlers fx/handlers
                 ;:biff/db (:biff/db snapshots)
                 ;:biff.index/snapshots snapshots
-                :biff/now (java.time.Instant/now)
+                :biff/now (tick/zoned-date-time)
                 :com.yakread/sign-redirect (fn [url]
                                              {:redirect url
                                               :redirect-sig (biffs/signature (jwt-secret) url)})

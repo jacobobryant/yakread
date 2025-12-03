@@ -1,14 +1,16 @@
 (ns com.yakread.model.ad
   (:require
    [clojure.string :as str]
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
+   [com.wsscode.misc.coll :as wss-coll]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
    [com.yakread.routes :as routes]
    [lambdaisland.uri :as uri]
-   [taoensso.tufte :refer [p]]))
+   [tick.core :as tick]))
 
 ;; TODO keep recent-cost updated (or calculate it on the fly if it's fast enough)
 (defresolver effective-bid [{:ad/keys [bid budget recent-cost]}]
@@ -20,10 +22,13 @@
 (defresolver xt-id [{:keys [ad/id]}]
   {:xt/id id})
 
-(defresolver user-ad [{:keys [biff/db]} {:keys [xt/id]}]
+(defresolver user-ad [{:keys [biff/conn]} {:keys [xt/id]}]
   {::pco/output [{:user/ad [:xt/id]}]}
-  (when-some [ad-id (biff/lookup-id db :ad/user id)]
-    {:user/ad {:xt/id ad-id}}))
+  (when-some [ad (first (biffx/q conn
+                                 {:select :xt/id
+                                  :from :ad
+                                  :where [:= :ad/user id]}))]
+    {:user/ad ad}))
 
 (defresolver url-with-protocol [{:keys [ad/url]}]
   {:ad/url-with-protocol (lib.content/add-protocol url)})
@@ -72,50 +77,41 @@
                  (= approve-state :pending) :pending)
      :ad/incomplete-fields incomplete-fields}))
 
-(defresolver n-clicks [{:keys [biff/db]} {:keys [ad/id]}]
+(defresolver n-clicks [{:keys [biff/conn]} {:keys [ad/id]}]
   {:ad/n-clicks
-   (or (first
-        (q db
-           '{:find (count-distinct user)
-             :in [ad]
-             :where [[click :ad.click/ad ad]
-                     [click :ad.click/user user]]}
-           id))
-       0)})
+   (-> (biffx/q conn
+                {:select [[[:count [:distinct :ad.click/user]] :cnt]]
+                 :from :ad-click
+                 :where [:= :ad.click/ad id]})
+       first
+       :cnt)})
 
 (defresolver host [{:keys [ad/url-with-protocol]}]
   {:ad/host (some-> url-with-protocol uri/uri :host str/trim not-empty)})
 
-(defn merge-by [id id->m k xs]
-  (mapv (fn [x]
-          (into x
-                (filter (comp some? val))
-                {k (id->m (get x id))}))
-        xs))
-
-(defresolver last-clicked [{:keys [biff/db]} ads]
+(defresolver last-clicked [{:keys [biff/conn]} ads]
   {::pco/input [:xt/id]
    ::pco/output [:ad/last-clicked]
    ::pco/batch? true}
-  (let [ad->last-clicked (p :ad->last-charged
-                          (into {} (q db
-                                     '{:find [ad (max t)]
-                                       :in [[ad ...]]
-                                       :where [[click :ad.click/ad ad]
-                                               [click :ad.click/created-at t]]}
-                                     (mapv :xt/id ads))))]
-    (merge-by :xt/id ad->last-clicked :ad/last-clicked ads)))
+  (->> (biffx/q conn
+                {:select [[:ad.click/ad :xt/id]
+                          [[:max :ad.click/created-at] :ad/last-clicked]]
+                 :from :ad-click
+                 :where [:in :ad.click/ad (mapv :xt/id ads)]})
+       (wss-coll/restore-order ads :xt/id)))
 
-(defresolver amount-pending [{:keys [biff/db]} ads]
+(defresolver amount-pending [{:keys [biff/conn]} ads]
   {::pco/input [:xt/id]
    ::pco/output [:ad/amount-pending]
    ::pco/batch? true}
-  (let [ad->amount-pending (into {} (q db
-                                       '{:find [ad (sum amount)]
-                                         :where [[charge :ad.credit/ad ad]
-                                                 [charge :ad.credit/charge-status :pending]
-                                                 [charge :ad.credit/amount amount]]}))]
-    (merge-by :xt/id ad->amount-pending :ad/amount-pending ads)))
+  (->> (biffx/q conn
+                {:select [[:ad.credit/ad :xt/id]
+                          [[:sum :ad.credit/amount] :ad/amount-pending]]
+                 :from :ad-credit
+                 :where [:and
+                         [:in :ad.credit/ad (mapv :xt/id ads)]
+                         [:= :ad.credit/charge-status [:lift :pending]]]})
+       (wss-coll/restore-order ads :xt/id)))
 
 (defresolver chargeable [{:keys [biff/now]} {:ad/keys [payment-method
                                                        payment-failed
@@ -138,7 +134,7 @@
          (not payment-failed)
          (not amount-pending)
          last-clicked
-         (not (biff/elapsed? last-clicked now 60 :days))
+         (< (tick/between last-clicked now :days) 60)
          (<= (if paused 50 500) balance)))})
 
 (defpipe get-stripe-status
@@ -154,6 +150,7 @@
                                         :query-params {:limit 100
                                                        :customer customer-id
                                                        :created {:gt (-> created-at
+                                                                         tick/instant
                                                                          inst-ms
                                                                          (quot 1000)
                                                                          str)}}})
@@ -178,18 +175,23 @@
   (when (= charge-status :pending)
     (get-stripe-status (assoc ctx :biff.pipe.pathom/output credit))))
 
-(defresolver pending-charge [{:keys [biff/db]} {:keys [xt/id]}]
+(defresolver pending-charge [{:keys [biff/conn]} {:keys [xt/id]}]
   {::pco/output [{:ad/pending-charge [:xt/id]}]}
-  (when-some [credit (biff/lookup-id db :ad.credit/ad id :ad.credit/charge-status :pending)]
-    {:ad/pending-charge {:xt/id credit}}))
+  (when-some [credit (first (biffx/q conn
+                                     {:select :xt/id
+                                      :from :ad-credit
+                                      :where [:and
+                                              [:= :ad.credit/ad id]
+                                              [:= :ad.credit/charge-status [:lift :pending]]]}))]
+    {:ad/pending-charge credit}))
 
-(defresolver pending-charges [{:keys [biff/db]} _]
+(defresolver pending-charges [{:keys [biff/conn]} _]
   {::pco/output [{:admin/pending-charges [:xt/id]}]}
   {:admin/pending-charges
-   (vec (q db
-           '{:find [charge]
-             :keys [xt/id]
-             :where [[charge :ad.credit/charge-status :pending]]}))})
+   (biffx/q conn
+            {:select :xt/id
+             :from :ad-credit
+             :where [:= :ad.credit/charge-status [:lift :pending]]})})
 
 (def module {:resolvers [ad-id
                          xt-id

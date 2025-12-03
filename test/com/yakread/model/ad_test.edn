@@ -1,0 +1,208 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.model.ad :refer :all]
+  [com.biffweb.experimental :as biffx]
+  [xtdb.api :as xt]
+  [xtdb.node :as xtn]],
+ :tests
+ [{:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:user [{:xt/id "user1", :user/email "alice@example.com"}],
+       :ad [{:xt/id "ad1", :ad/user "user1"}]})]
+    (user-ad {:biff/conn node} {:xt/id "user1"})),
+   :result {:user/ad {:xt/id "ad1"}}}
+  _
+  {:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:ad-click
+       [{:xt/id "ad-click1",
+         :ad.click/ad "ad1",
+         :ad.click/user "user1"}
+        {:xt/id "ad-click2",
+         :ad.click/ad "ad2",
+         :ad.click/user "user2"}
+        {:xt/id "ad-click3",
+         :ad.click/ad "ad2",
+         :ad.click/user "user2"}
+        {:xt/id "ad-click4",
+         :ad.click/ad "ad2",
+         :ad.click/user "user3"}
+        {:xt/id "ad-click5",
+         :ad.click/ad "ad2",
+         :ad.click/user "user4"}]})]
+    {:not-empty (n-clicks {:biff/conn node} {:ad/id "ad2"}),
+     :empty (n-clicks {:biff/conn node} {:ad/id "ad3"})}),
+   :result {:not-empty {:ad/n-clicks 3}, :empty {:ad/n-clicks 0}}}
+  _
+  {:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:ad-click
+       [{:xt/id "ad-click1",
+         :ad.click/ad "ad1",
+         :ad.click/created-at (t/zdt 2000)}
+        {:xt/id "ad-click2",
+         :ad.click/ad "ad2",
+         :ad.click/created-at (t/zdt 2001)}
+        {:xt/id "ad-click3",
+         :ad.click/ad "ad2",
+         :ad.click/created-at (t/zdt 2002)}
+        {:xt/id "ad-click4",
+         :ad.click/ad "ad2",
+         :ad.click/created-at (t/zdt 2003)}
+        {:xt/id "ad-click5",
+         :ad.click/ad "ad2",
+         :ad.click/created-at (t/zdt 2004)}]})]
+    (last-clicked
+     {:biff/conn node}
+     [{:xt/id "ad1"} {:xt/id "ad2"} {:xt/id "ad3"}])),
+   :result
+   [{:xt/id "ad1",
+     :ad/last-clicked #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}
+    {:xt/id "ad2",
+     :ad/last-clicked #time/zoned-date-time "2004-01-01T00:00Z[UTC]"}
+    {:xt/id "ad3"}]}
+  _
+  {:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:ad-credit
+       [{:xt/id "ad-credit1",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit2",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 75}
+        {:xt/id "ad-credit3",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :confirmed,
+         :ad.credit/amount 125}
+        {:xt/id "ad-credit4",
+         :ad.credit/ad "ad2",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit5",
+         :ad.credit/ad "ad3",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}]})]
+    (amount-pending
+     {:biff/conn node}
+     [{:xt/id "ad1"} {:xt/id "ad2"} {:xt/id "ad4"}])),
+   :result
+   [{:xt/id "ad1", :ad/amount-pending 175}
+    {:xt/id "ad2", :ad/amount-pending 100}
+    {:xt/id "ad4"}]}
+  _
+  {:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:ad-credit
+       [{:xt/id "ad-credit1",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit2",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 75}
+        {:xt/id "ad-credit3",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :confirmed,
+         :ad.credit/amount 125}
+        {:xt/id "ad-credit4",
+         :ad.credit/ad "ad2",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit5",
+         :ad.credit/ad "ad3",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}]})]
+    (pending-charge {:biff/conn node} {:xt/id "ad1"})),
+   :result {:ad/pending-charge {:xt/id "ad-credit2"}}}
+  _
+  {:eval
+   (with-open
+    [node
+     (t/start-test-node
+      {:ad-credit
+       [{:xt/id "ad-credit1",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit2",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 75}
+        {:xt/id "ad-credit3",
+         :ad.credit/ad "ad1",
+         :ad.credit/charge-status :confirmed,
+         :ad.credit/amount 125}
+        {:xt/id "ad-credit4",
+         :ad.credit/ad "ad2",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}
+        {:xt/id "ad-credit5",
+         :ad.credit/ad "ad3",
+         :ad.credit/charge-status :pending,
+         :ad.credit/amount 100}]})]
+    (pending-charges {:biff/conn node} nil)),
+   :result
+   {:admin/pending-charges
+    [{:xt/id "ad-credit5"}
+     {:xt/id "ad-credit2"}
+     {:xt/id "ad-credit1"}
+     {:xt/id "ad-credit4"}]}}
+  _
+  {:eval
+   (let
+    [ctx
+     {:biff/now (t/zdt 2000)}
+     ad
+     {:ad/payment-method "abc123",
+      :ad/payment-failed false,
+      :ad/balance 1500,
+      :ad/amount-pending nil,
+      :ad/last-clicked (t/zdt 2000),
+      :ad/paused false}
+     chargeable*
+     (fn [& {:as overrides}] (chargeable ctx (merge ad overrides)))]
+    {:success (chargeable*),
+     :stale (chargeable* :ad/last-clicked (t/zdt 1999)),
+     :amount-too-small (chargeable* :ad/balance 250),
+     :paused (chargeable* :ad/balance 250 :ad/paused true)}),
+   :result
+   {:success {:ad/chargeable true},
+    :stale {:ad/chargeable false},
+    :amount-too-small {:ad/chargeable false},
+    :paused {:ad/chargeable true}}}
+  _
+  {:eval
+   (get-stripe-status
+    {:biff/secret {:stripe/api-key "12345"},
+     :biff.pipe.pathom/output
+     {:ad.credit/ad {:ad/customer-id "abc123"},
+      :ad.credit/created-at (t/zdt 2000)}}
+    :start),
+   :result
+   {:biff.pipe/next
+    [{:biff.pipe/current :biff.pipe/http,
+      :biff.pipe.http/input
+      {:method :get,
+       :url "https://api.stripe.com/v1/payment_intents",
+       :basic-auth ["12345" ""],
+       :flatten-nested-form-params true,
+       :as :json,
+       :query-params
+       {:limit 100, :customer "abc123", :created {:gt "946684800"}}}}
+     :end]}}
+  _]}

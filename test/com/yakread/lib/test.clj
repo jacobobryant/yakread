@@ -1,28 +1,30 @@
 (ns com.yakread.lib.test
   (:require
-   [clojure.data.generators :as gen]
    [clojure.edn :as edn]
    [clojure.java.classpath :as cp]
    [clojure.java.io :as io]
    [clojure.pprint :as pprint :refer [pprint]]
    [clojure.string :as str]
-   [clojure.test :as test :refer [is]]
-   [clojure.test.check :as tc]
    [clojure.test.check.generators :as tc-gen]
-   [clojure.test.check.properties :as prop]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.stuartsierra.dependency :as dep]
    [com.yakread :as main]
-   [com.yakread.lib.route :as lib.route]
    [com.yakread.util.biff-staging :as biffs]
-   [fugato.core :as fugato]
    [malli.experimental.time.generator]
    [malli.generator :as malli.g]
+   [tick.core :as tick]
    [time-literals.read-write :as time-literals]
-   #_[xtdb.api :as xt])
+   [xtdb.api :as xt]
+   [xtdb.node :as xtn])
   (:import
    [java.time Instant]))
+
+(defn start-test-node [table->records]
+  (let [node (xtn/start-node {})]
+    (xt/submit-tx node (for [[table records] table->records]
+                         (into [:put-docs table] records)))
+    node))
 
 (defn- read-string* [s & [extra-readers]]
   (edn/read-string {:readers (merge time-literals/tags
@@ -38,12 +40,14 @@
        (map #(.getPath %))))
 
 (defn- truncate-ex [ex filter-str]
-  (let [;; There might be a better way to get the exception as stack trace as a vector.
-        ex (edn/read-string {:readers {'error identity}} (pr-str ex))
-        new-trace (->> (:trace ex)
-                       (take-while #(not (str/includes? (str (first %)) filter-str)))
-                       vec)]
-    (assoc ex :trace new-trace)))
+  (try
+    (doto ex
+      (.setStackTrace
+       (->> (.getStackTrace ex)
+            (take-while #(not (str/includes? (.getClassName %) filter-str)))
+            (into-array java.lang.StackTraceElement))))
+    (catch Exception _
+      ex)))
 
 (defn tapped*
   "Calls (f) and returns a tuple of f's return value along with a vector of everything that was
@@ -113,6 +117,9 @@
                          (or hour 0)
                          (or minute 0)
                          (or second* 0))))
+
+(defn zdt [& args]
+  (tick/in (apply instant args) "UTC"))
 
 (defn queue [& jobs]
   (let [queue (java.util.concurrent.PriorityBlockingQueue. 11 (fn [a b] 0))]
