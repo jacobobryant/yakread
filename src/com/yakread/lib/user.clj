@@ -1,6 +1,8 @@
 (ns com.yakread.lib.user
-  (:require [com.biffweb :as biff :refer [q]]
-            [clojure.string :as str]))
+  (:require
+   [clojure.string :as str]
+   [com.biffweb.experimental :as biffx]
+   [com.yakread.lib.core :as lib.core]))
 
 (let [reserved #{"hello"
                  "support"
@@ -19,12 +21,19 @@
       (when-not (reserved username)
         username))))
 
-(defn email-username-taken? [db username]
-  (some?
-   (first
-    (q db
-       '{:find doc
-         :in [username]
-         :where [(or [doc :conn.email/username username]
-                     [doc :user/email-username* username])]}
-       username))))
+(defn email-username-taken? [conn username]
+  (-> (biffx/q conn
+               {:select [[[:or
+                           [:exists
+                            {:select [[[:inline 1]]]
+                             :from :user
+                             :where [:= :user/email-username username]
+                             :limit [:inline 1]}]
+                           [:exists
+                            {:select [[[:inline 1]]]
+                             :from :deleted-user
+                             :where [:= :deleted-user/email-username-hash (lib.core/sha256 username)]
+                             :limit [:inline 1]}]]
+                          :taken]]})
+      first
+      :taken))

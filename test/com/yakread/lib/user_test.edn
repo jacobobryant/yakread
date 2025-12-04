@@ -1,0 +1,22 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.lib.user :refer :all]
+  [com.yakread.lib.core :as lib.core]],
+ :tests
+ [{:eval
+   (t/with-node
+    [node
+     {:user [{:xt/id "user1", :user/email-username "foo"}],
+      :deleted-user
+      [{:xt/id "deleted-user1",
+        :deleted-user/email-username-hash
+        "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"}]}]
+    {:taken-by-user (email-username-taken? node "foo"),
+     :taken-by-deleted-user (email-username-taken? node "bar"),
+     :not-taken (email-username-taken? node "baz")}),
+   :result
+   {:taken-by-user true,
+    :taken-by-deleted-user true,
+    :not-taken false}}
+  _]}
