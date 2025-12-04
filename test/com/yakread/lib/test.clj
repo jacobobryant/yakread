@@ -26,6 +26,10 @@
                          (into [:put-docs table] records)))
     node))
 
+(defmacro with-node [[node-sym db-contents] & body]
+  `(with-open [~node-sym (start-test-node ~db-contents)]
+     ~@body))
+
 (defn- read-string* [s & [extra-readers]]
   (edn/read-string {:readers (merge time-literals/tags
                                     {'biff/file clojure.java.io/file}

@@ -4,27 +4,38 @@
   [com.yakread.model.digest :refer :all]],
  :tests
  [{:eval
-   (t/with-db
-    [db
-     [{:xt/id "item1", :item/ingested-at (t/instant 2001)}
-      {:xt/id "item2", :item/ingested-at (t/instant 2003)}]]
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/ingested-at (t/zdt 2001)}
+       {:xt/id "item2", :item/ingested-at (t/zdt 2003)}]}]
     (digest-sub-items
-     {:biff/db db, :biff/now (t/instant 2003 1 10)}
-     {:user/id "user1",
+     {:biff/conn node, :biff/now (t/zdt 2003 1 10)}
+     {:user/subscriptions
+      [{:sub/items [{:xt/id "item1"} {:xt/id "item2"}]}]})),
+   :result {:user/digest-sub-items [{:xt/id "item2"}]}}
+  _
+  {:eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/ingested-at (t/zdt 2003 1 4)}
+       {:xt/id "item2", :item/ingested-at (t/zdt 2003 1 6)}]}]
+    (digest-sub-items
+     {:biff/conn node, :biff/now (t/zdt 2003 1 10)}
+     {:user/digest-last-sent (t/zdt 2003 1 5),
       :user/subscriptions
       [{:sub/items [{:xt/id "item1"} {:xt/id "item2"}]}]})),
    :result {:user/digest-sub-items [{:xt/id "item2"}]}}
   _
   {:eval
-   (t/with-db
-    [db
-     [{:xt/id "item1", :item/ingested-at (t/instant 2003 1 4)}
-      {:xt/id "item2", :item/ingested-at (t/instant 2003 1 6)}]]
-    (digest-sub-items
-     {:biff/db db, :biff/now (t/instant 2003 1 10)}
-     {:user/id "user1",
-      :user/digest-last-sent (t/instant 2003 1 5),
-      :user/subscriptions
-      [{:sub/items [{:xt/id "item1"} {:xt/id "item2"}]}]})),
-   :result {:user/digest-sub-items [{:xt/id "item2"}]}}
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/ingested-at (t/zdt 2001)}
+       {:xt/id "item2", :item/ingested-at (t/zdt 2003)}]}]
+    (digest-bookmarks
+     {:biff/conn node, :biff/now (t/zdt 2003 1 10)}
+     {:user/bookmarks [{:xt/id "item1"} {:xt/id "item2"}]})),
+   :result {:user/digest-bookmarks [{:xt/id "item2"}]}}
   _]}
