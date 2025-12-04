@@ -1,0 +1,12 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.model.user :refer :all]],
+ :tests
+ [{:eval
+   (t/with-node
+    [node {:mv-user [{:xt/id "mv-user1", :mv.user/user "user1"}]}]
+    {:exists (mv {:biff/conn node} {:user/id "user1"}),
+     :not-exists (mv {:biff/conn node} {:user/id "user2"})}),
+   :result {:exists {:user/mv {:xt/id "mv-user1"}}, :not-exists nil}}
+  _]}

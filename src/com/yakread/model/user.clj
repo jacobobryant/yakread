@@ -1,11 +1,11 @@
 (ns com.yakread.model.user
   (:require
    [clojure.string :as str]
-   [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
-   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.lib.user :as lib.user]))
+   [com.yakread.lib.user :as lib.user]
+   [tick.core :as tick]))
 
 (defresolver session-user [{:keys [session]} _]
   #::pco{:output [{:session/user [:xt/id]}]}
@@ -27,7 +27,7 @@
   (when (:uid session)
     {:user/current {:xt/id (:uid session)}}))
 
-(defresolver suggested-email-username [{:keys [biff/db]} {:user/keys [email email-username]}]
+(defresolver suggested-email-username [{:keys [biff/conn]} {:user/keys [email email-username]}]
   #::pco{:input [:user/email (? :user/email-username)]
          :output [:user/suggested-email-username]}
   (when-not email-username
@@ -37,7 +37,7 @@
                             str/lower-case
                             (str/replace #"(\+.*|yakread)" "")
                             lib.user/normalize-email-username)]
-      (when-not (some->> suggested (lib.user/email-username-taken? db))
+      (when-not (some->> suggested (lib.user/email-username-taken? conn))
         {:user/suggested-email-username suggested}))))
 
 (defresolver user-id [{:keys [xt/id user/email]}]
@@ -52,7 +52,7 @@
 
 (defresolver default-send-digest-at [_]
   {::pco/input [:user/email]}
-  {:user/send-digest-at (java.time.LocalTime/of 8 0)})
+  {:user/send-digest-at (tick/time "08:00")})
 
 (defresolver default-timezone [{:user/keys [timezone]}]
   {::pco/input [:user/email
@@ -60,7 +60,7 @@
    ::pco/output [:user/timezone
                  :user/timezone*]}
   {:user/timezone* timezone
-   :user/timezone (or timezone (java.time.ZoneId/of "US/Pacific"))})
+   :user/timezone (or timezone (tick/zone "US/Pacific"))})
 
 (defresolver premium [{:keys [biff/now]} {:user/keys [plan cancel-at]}]
   {::pco/input [(? :user/plan)
@@ -68,12 +68,17 @@
   {:user/premium (boolean
                   (and plan
                        (or (not cancel-at)
-                           (lib.core/increasing? now cancel-at))))})
+                           (tick/<= now cancel-at))))})
 
-(defresolver mv [{:keys [biff/db]} {:user/keys [id]}]
+(defresolver mv [{:keys [biff/conn]} {:user/keys [id]}]
   {::pco/output [{:user/mv [:xt/id]}]}
-  (when-some [id (biff/lookup-id db :mv.user/user id)]
-    {:user/mv {:xt/id id}}))
+  (when-some [mv-user
+              (first (biffx/q conn
+                              {:select :xt/id
+                               :from :mv-user
+                               :where [:= :mv.user/user id]
+                               :limit 1}))]
+    {:user/mv mv-user}))
 
 (defresolver account-deletable [{:user/keys [ad plan cancel-at]}]
   {::pco/input [{(? :user/ad) [:ad/balance]}
