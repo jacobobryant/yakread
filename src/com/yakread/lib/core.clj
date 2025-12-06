@@ -124,3 +124,17 @@
   (let [digest (MessageDigest/getInstance "SHA-256")]
     (.update digest (.getBytes s "UTF-8"))
     (format "%064x" (BigInteger. 1 (.digest digest)))))
+
+(defn restore-order
+  "Like com.wsscode.misc.coll/restore-order, but key can be a function instead of just a keyword."
+  [inputs key items & [default-fn]]
+  (let [index (into {}
+                    (map (juxt key identity))
+                    items)]
+    (into []
+          (map (fn [input]
+                 (or (get index (key input))
+                     (when default-fn
+                       (default-fn input))
+                     {})))
+          inputs)))

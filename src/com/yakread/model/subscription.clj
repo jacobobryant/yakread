@@ -1,30 +1,23 @@
 (ns com.yakread.model.subscription
   (:require
-   [clojure.set :as set]
    [clojure.string :as str]
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.item :as lib.item]
    [com.yakread.lib.serialize :as lib.serialize]
-   [com.yakread.lib.user-item :as lib.user-item]
-   [com.yakread.util.biff-staging :as biffs]
    [xtdb.api :as-alias xt]))
 
-(defresolver user-subs [{:keys [biff/db]} {:keys [user/id]}]
-  #::pco{:output [{:user/subscriptions [:sub/id]}
-                  {:user/unsubscribed [:sub/id]}]}
-  (as-> id $
-    (q db
-       '{:find [sub t]
-         :in [user]
-         :where [[sub :sub/user user]
-                 [(get-attr sub :sub.email/unsubscribed-at nil) [t ...]]]}
-       $)
-    (group-by (comp some? second) $)
-    (update-vals $ #(mapv (fn [[id _]] {:sub/id id}) %))
-    (merge {true [] false []} $)
-    (set/rename-keys $ {false :user/subscriptions true :user/unsubscribed})))
+(defresolver user-subs [{:keys [biff/conn]} {:keys [user/id]}]
+  #::pco{:output [{:user/subscriptions [:xt/id]}
+                  {:user/unsubscribed [:xt/id]}]}
+  (let [{subbed false
+         unsubbed true} (->> (biffx/q conn
+                                       {:select [:xt/id :sub.email/unsubscribed-at]
+                                        :from :sub
+                                        :where [:= :sub/user id]})
+                              (group-by (comp some? :sub.email/unsubscribed-at)))]
+    {:user/subscriptions (or subbed [])
+     :user/unsubscribed (mapv #(select-keys % [:xt/id]) unsubbed)}))
 
 (defresolver email-title [{:keys [sub.email/from]}]
   {:sub/title (str/replace from #"\s<.*>" "")})
@@ -41,23 +34,21 @@
   #::pco{:input [{:sub.feed/feed [:feed/url]}]}
   {:sub/subtitle (:feed/url feed)})
 
-(defresolver latest-email-item [{:keys [biff/db]} {:sub/keys [doc-type id]}]
-  {::pco/output [{:sub.email/latest-item [:item/id]}]}
-  (when (= doc-type :sub/email)
-    {:sub.email/latest-item
-     {:item/id (ffirst (q db
-                          '{:find [item t]
-                            :in [sub]
-                            :order-by [[t :desc]]
-                            :limit 1
-                            :where [[item :item.email/sub sub]
-                                    [item :item/ingested-at t]]}
-                          id))}}))
+(defresolver latest-email-item [{:keys [biff/conn]} {:sub/keys [doc-type id]}]
+  {::pco/output [{:sub.email/latest-item [:xt/id]}]}
+  (when-some [item (when (= doc-type :sub/email)
+                     (first (biffx/q conn
+                                     {:select :xt/id
+                                      :from :item
+                                      :where [:= :item.email/sub id]
+                                      :order-by [[:item/ingested-at :desc]]
+                                      :limit 1})))]
+    {:sub.email/latest-item item}))
 
 (defresolver sub-id->xt-id [{:keys [sub/id]}]
   {:xt/id id})
 
-(defresolver sub-info [{:keys [xt/id sub/user sub.feed/feed sub.email/from]}]
+(defresolver sub-info [{:keys [xt/id sub.feed/feed sub.email/from]}]
   #::pco{:input [:xt/id
                  :sub/user
                  (? :sub.feed/feed)
@@ -73,191 +64,217 @@
      :sub/source-id (:xt/id feed)
      :sub/doc-type :sub/feed}))
 
-(defresolver unread [{:keys [biff/db]} {:sub/keys [user source-id]}]
-  ;; TODO
-  {:sub/unread 0
-   #_(let [total (or (biff/index-get db :unread source-id) 0)
-         _read (or (biff/index-get db :unread [(:xt/id user) source-id]) 0)
-         unread (- total _read)]
-     unread)})
+(defn- doc-type->source-key [doc-type]
+  (case doc-type
+    :sub/email :item.email/sub
+    :sub/feed :item.feed/feed))
 
-(defresolver published-at [{:keys [biff/db]} {:keys [sub/source-id]}]
-  {::pco/output [:sub/published-at]}
-  ;; TODO
-  #_(when-some [published-at (biff/index-get db :last-published source-id)]
-    {:sub/published-at published-at}))
+(defresolver total [{:keys [biff/conn]} inputs]
+  {::pco/input [:sub/source-id :sub/doc-type]
+   ::pco/output [:sub/total]
+   ::pco/batch? true}
+  (let [doc-type->source-ids (lib.core/group-by-to :sub/doc-type :sub/source-id inputs)
+        results (biffx/q conn
+                         {:union-all
+                          (for [[doc-type source-ids]  doc-type->source-ids
+                                :let [source-key (doc-type->source-key doc-type)]]
+                            {:select [[source-key :sub/source-id]
+                                      [:%count.* :sub/total]]
+                             :from :item
+                             :where [:in source-key source-ids]})})]
+    (lib.core/restore-order inputs
+                            :sub/source-id
+                            results
+                            (fn [{:keys [sub/source-id]}]
+                              {:sub/source-id source-id
+                               :sub/total 0}))))
 
-(defresolver items [{:keys [biff/db]} subscriptions]
-  {::pco/input [:sub/source-id
-                :sub/doc-type]
+(defresolver items-read [{:keys [biff/conn]} inputs]
+  {::pco/input [:sub/source-id :sub/doc-type :sub/user]
+   ::pco/output [:sub/items-read]
+   ::pco/batch? true}
+  (let [results (biffx/q conn
+                         {:union
+                          (for [[user-id inputs] (group-by :sub/user inputs)
+                                [doc-type inputs] (group-by :sub/doc-type inputs)
+                                :let [source-ids (mapv :sub/source-id inputs)
+                                      source-key (doc-type->source-key doc-type)]]
+                            {:select [[:user-item/user :sub/user]
+                                      [source-key :sub/source-id]
+                                      [[:count :user-item/item] :sub/items-read]]
+                             :from :user-item
+                             :join [:item [:= :item._id :user-item/item]]
+                             :where [:and
+                                     [:= :user-item/user user-id]
+                                     [:in source-key source-ids]
+                                     [:is-not [:coalesce
+                                               :user-item/viewed-at
+                                               :user-item/skipped-at
+                                               :user-item/favorited-at
+                                               :user-item/disliked-at
+                                               :user-item/reported-at]
+                                      nil]]})})]
+    (lib.core/restore-order inputs
+                            (juxt :sub/user :sub/source-id)
+                            results
+                            (fn [{:sub/keys [user source-id]}]
+                              {:sub/user user
+                               :sub/source-id source-id
+                               :sub/items-read 0}))))
+
+(defresolver items-unread [{:sub/keys [total items-read]}]
+  {:sub/items-unread (- total items-read)
+   ;; for backwards compat
+   :sub/unread (- total items-read)})
+
+(defresolver published-at [{:keys [biff/conn]} inputs]
+  {::pco/input [:sub/source-id :sub/doc-type :sub/created-at]
+   ::pco/output [:sub/published-at]
+   ::pco/batch? true}
+  (let [doc-type->source-ids (lib.core/group-by-to :sub/doc-type :sub/source-id inputs)
+        results (biffx/q conn
+                         {:union-all
+                          (for [[doc-type source-ids]  doc-type->source-ids
+                                :let [source-key (doc-type->source-key doc-type)]]
+                            {:select [[source-key :sub/source-id]
+                                      [[:max [:coalesce :item/published-at :item/ingested-at]]
+                                       :sub/published-at]]
+                             :from :item
+                             :where [:in source-key source-ids]})})]
+    (lib.core/restore-order inputs
+                            :sub/source-id
+                            results
+                            (fn [{:sub/keys [source-id created-at]}]
+                              {:sub/source-id source-id
+                               :sub/published-at created-at}))))
+
+(defresolver items [{:keys [biff/conn]} inputs]
+  {::pco/input [:sub/source-id :sub/doc-type]
    ::pco/output [{:sub/items [:xt/id]}]
    ::pco/batch? true}
-  (let [{feed-subs :sub/feed
-         email-subs :sub/email} (group-by :sub/doc-type subscriptions)
-        feed-source->items (->> (q db
-                                   '{:find [source item]
-                                     :in [[source ...]]
-                                     :where [[item :item.feed/feed source]]
-                                     :timeout 240000}
-                                   (mapv :sub/source-id feed-subs))
-                                (lib.core/group-by-to first #(array-map :xt/id (second %))))
-        email-source->items (->> (q db
-                                    '{:find [source item]
-                                      :in [[source ...]]
-                                      :where [[item :item.email/sub source]]
-                                      :timeout 240000}
-                                    (mapv :sub/source-id email-subs))
-                                 (lib.core/group-by-to first #(array-map :xt/id (second %))))
-        doc-type->source->items {:sub/email email-source->items
-                                 :sub/feed feed-source->items}]
-    (mapv (fn [{:sub/keys [source-id doc-type] :as sub}]
-            (merge sub
-                   {:sub/items (get-in doc-type->source->items [doc-type source-id] [])}))
-          subscriptions)))
+  (let [doc-type->source-ids (lib.core/group-by-to :sub/doc-type :sub/source-id inputs)
+        results (->> (biffx/q conn
+                              {:union-all
+                               (for [[doc-type source-ids]  doc-type->source-ids
+                                     :let [source-key (doc-type->source-key doc-type)]]
+                                 {:select [[source-key :sub/source-id]
+                                           :xt/id]
+                                  :from :item
+                                  :where [:in source-key source-ids]})})
+                     (group-by :sub/source-id)
+                     (mapv (fn [[source-id items]]
+                             {:sub/source-id source-id
+                              :sub/items (mapv #(select-keys % [:xt/id]) items)})))]
+    (lib.core/restore-order inputs
+                            :sub/source-id
+                            results
+                            (fn [{:sub/keys [source-id]}]
+                              {:sub/source-id source-id
+                               :sub/items []}))))
 
-(defresolver latest-item [{:keys [biff/db]} {:sub/keys [source-id doc-type]}]
-  {::pco/output [{:sub/latest-item [:xt/id]}]}
-  (when-some [id (ffirst
-                  (q db
-                     {:find '[item t]
-                      :in '[source]
-                      :where [['item
-                               (case doc-type
-                                 :sub/feed :item.feed/feed
-                                 :sub/email :item.email/sub)
-                               'source]
-                              '[item :item/ingested-at t]]
-                      :order-by '[[t :desc]]
-                      :limit 1}
-                     source-id))]
-    {:sub/latest-item {:xt/id id}}))
+(defresolver latest-item [{:keys [biff/conn]} inputs]
+  {::pco/input [:sub/source-id :sub/doc-type :sub/published-at]
+   ::pco/output [{:sub/latest-item [:xt/id]}]
+   ::pco/batch? true}
+  (let [doc-type->subs (group-by :sub/doc-type inputs)
+        results (into []
+                      (map (fn [{:keys [sub/source-id xt/id]}]
+                             {:sub/source-id source-id
+                              :sub/latest-item {:xt/id id}}))
+                      (biffx/q conn
+                               ;; TODO try [:coalesce :item.feed/feed :item.email/sub]
+                               {:union-all
+                                (for [[doc-type subs*]  doc-type->subs
+                                      :let [source-key (doc-type->source-key doc-type)]]
+                                  {:select [[source-key :sub/source-id]
+                                            :xt/id]
+                                   :from :item
+                                   :where [:in
+                                           [:array [source-key [:coalesce
+                                                                :item/published-at
+                                                                :item/ingested-at]]]
+                                           (for [{:sub/keys [source-id published-at]} subs*]
+                                             [:array [source-id published-at]])]})}))]
+    (lib.core/restore-order inputs
+                            :sub/source-id
+                            results)))
 
-(defresolver from-params [{:keys [biff/db biff/malli-opts session path-params params]} _]
-  #::pco{:output [{:params/sub [:xt/id]}]}
+(defresolver from-params [{:keys [biff/conn session path-params params]} _]
+  #::pco{:output [{:params/sub [:xt/id :sub/user]}]}
   (let [sub-id (or (:sub/id params)
                    (lib.serialize/url->uuid (:sub-id path-params)))
-        sub (when (some? sub-id)
-              ;; TODO
-              #_(xt/entity db sub-id))]
-    #_(when (and sub (= (:uid session) (:sub/user sub)))
-      {:params/sub (biffs/joinify @malli-opts sub)})))
+        [sub] (when (some? sub-id)
+                (biffx/q conn
+                         {:select [:xt/id :sub/user]
+                          :from :sub
+                          :where [:= :xt/id sub-id]}))]
+    (when (and sub (= (:uid session) (:sub/user sub)))
+      {:params/sub sub})))
 
-(defresolver params-checked [{:keys [biff/db biff/malli-opts session form-params params]} _]
+;; TODO turn from-params into a batch resolver and delete this
+(defresolver params-checked [{:keys [biff/conn session params]} _]
   #::pco{:output [{:params.checked/subscriptions [:sub/id]}]}
-  ;; TODO
-  #_(let [subs* (mapv #(some->> % name parse-uuid (xt/entity db))
-                    (keys (:subs params)))]
-    (when (every? #(= (:uid session) (:sub/user %)) subs*)
-      {:params.checked/subscriptions (mapv #(biffs/joinify @malli-opts %) subs*)})))
+  (let [sub-ids (mapv #(some-> % name parse-uuid) (keys (:subs params)))
+        subs* (biffx/q conn
+                       {:select [:xt/id :sub/user]
+                        :from :sub
+                        :where [:in :xt/id sub-ids]})]
 
-(defn- index-update [index-get id f]
-  (let [old-doc (index-get id)
-        new-doc (f old-doc)]
-    (when (not= old-doc new-doc)
-      {id new-doc})))
+    (when (and (= (count sub-ids) (count subs*))
+               (every? #(= (:uid session) (:sub/user %)) subs*))
+      {:params.checked/subscriptions subs*})))
 
-(def last-published-index
-  {:id :last-published
-   :version 1
-   :schema [:tuple :uuid :time/instant] ;; TODO maybe enforce this in tests/dev or something
-   :indexer
-   (fn [{:biff.index/keys [index-get op doc]}]
-     (when-let [id (and (= op ::xt/put)
-                        (lib.item/source-id doc))]
-       (index-update index-get
-                     id
-                     (fn [last-published]
-                       (->> [last-published (lib.item/published-at doc)]
-                            (filterv some?)
-                            (apply max-key inst-ms))))))})
-
-(def unread-index
-  {:id :unread
-   :version 0
-   :schema [:or {:registry {}}
-            ;; user+source -> read
-            [:tuple [:tuple :uuid :uuid] :int]
-            ;; source -> total
-            [:tuple :uuid :int]
-            ;; item -> source
-            [:tuple :uuid :uuid]
-            ;; rec -> item-read?
-            [:tuple :uuid [:enum true]]]
-   :indexer
-   (fn [{:biff.index/keys [index-get op doc]}]
-     (let [source-id (lib.item/source-id doc)]
-       (cond
-         ;; When a new item is created, increment its source's unread count.
-         (and (= op ::xt/put) source-id (-> (:xt/id doc) index-get nil?))
-         {(:xt/id doc) source-id
-          source-id ((fnil inc 0) (index-get source-id))}
-
-         ;; When an item is read, decrement its source's unread count.
-         (and (= op ::xt/put) (:user-item/user doc))
-         (let [new-doc-read? (lib.user-item/read? doc)
-               old-doc-read? (boolean (index-get (:xt/id doc)))
-               source-id (index-get (:user-item/item doc))]
-           (when (and source-id (not= new-doc-read? old-doc-read?))
-             (let [id [(:user-item/user doc) source-id]
-                   n-read ((fnil (if new-doc-read? inc dec) 0) (index-get id))]
-               {(:xt/id doc) (when new-doc-read? true)
-                id           (when (not= n-read 0) n-read)}))))))})
-
-(defresolver unread-items [{:keys [biff/db]} subscriptions]
+(defresolver unread-items [{:keys [biff/conn]} subscriptions]
   #::pco{:input [{:sub/user [:xt/id]}
                  {:sub/items [:xt/id]}]
          :output [{:sub/unread-items [:xt/id]}]
          :batch? true}
-  (let [inputs (for [{:sub/keys [user items]} subscriptions
-                     item items]
-                 [(:xt/id user) (:xt/id item)])
-        user->read-items (into {}
-                               (map (fn [[user results]]
-                                      [user (set (mapv second results))]))
-                               (group-by
-                                first
-                                (q db
-                                   '{:find [user item]
-                                     :in [[[user item]]]
-                                     :timeout 120000
-                                     :where [[usit :user-item/item item]
-                                             [usit :user-item/user user]
-                                             (or-join [usit]
-                                               [usit :user-item/viewed-at _]
-                                               [usit :user-item/skipped-at _]
-                                               [usit :user-item/favorited-at _]
-                                               [usit :user-item/disliked-at _]
-                                               [usit :user-item/reported-at _])]}
-                                   inputs)))]
-    (mapv (fn [{:sub/keys [user items] :as sub}]
+  (let [results (biffx/q conn
+                         {:select [:user-item/user :user-item/item]
+                          :from :user-item
+                          :where [:and
+                                  [:in
+                                   [:array [:user-item/user :user-item/item]]
+                                   (for [{:sub/keys [user items]} subscriptions
+                                         item items]
+                                     [:array [(:xt/id user) (:xt/id item)]])]
+                                  [:is-not
+                                   [:coalesce
+                                    :user-item/viewed-at
+                                    :user-item/skipped-at
+                                    :user-item/favorited-at
+                                    :user-item/disliked-at
+                                    :user-item/reported-at]
+                                   nil]]})
+        user->read-items (update-vals (group-by :user-item/user results)
+                                      (fn [results]
+                                        (into #{} (map :user-item/item) results)))]
+    (mapv (fn [{:sub/keys [user items]}]
             (let [read-items (get user->read-items (:xt/id user) #{})
                   unread-items (filterv (complement (comp read-items :xt/id)) items)]
-              (merge sub
-                     {:sub/unread-items unread-items})))
+              {:sub/unread-items unread-items}))
           subscriptions)))
 
-(defresolver mv [{:keys [biff/db]} subs*]
-  {::pco/input  [:sub/id]
+(defresolver mv [{:keys [biff/conn]} subs*]
+  {::pco/input  [:xt/id]
    ::pco/output [{:sub/mv [:xt/id]}]
    ::pco/batch?  true}
-  (let [sub->mv (into {}
-                      (q db
-                         '{:find [sub mv]
-                           :in [[sub ...]]
-                           :where [[mv :mv.sub/sub sub]]}
-                         (mapv :sub/id subs*)))]
-    (mapv (fn [{:keys [sub/id] :as sub}]
-            (merge sub
-                   (when-some [mv-id (sub->mv id)]
-                     {:sub/mv {:xt/id mv-id}})))
-          subs*)))
+  (let [results (mapv (fn [{:keys [sub/mv xt/id]}]
+                        {:xt/id id
+                         :sub/mv {:xt/id mv}})
+                      (biffx/q conn
+                               {:select [[:xt/id :sub/mv]
+                                         [:mv.sub/sub :xt/id]]
+                                :from :mv-sub
+                                :where [:in :mv.sub/sub (mapv :xt/id subs*)]}))]
+    (lib.core/restore-order subs* :xt/id results)))
 
 (def module {:resolvers [user-subs
                          sub-info
                          sub-id->xt-id
                          email-title
                          feed-sub-title
-                         unread
+                         items-unread
                          published-at
                          items
                          latest-item
@@ -267,6 +284,6 @@
                          feed-sub-subtitle
                          latest-email-item
                          email-subtitle
-                         mv]
-             :indexes [last-published-index
-                       unread-index]})
+                         mv
+                         total
+                         items-read]})

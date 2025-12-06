@@ -1,0 +1,265 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.model.subscription :refer :all]],
+ :tests
+ [{:doc "user-subs",
+   :eval
+   (t/with-node
+    [node
+     {:sub
+      [{:xt/id "sub1", :sub/user "user1"}
+       {:xt/id "sub2",
+        :sub/user "user1",
+        :sub.email/unsubscribed-at (t/zdt 2000)}]}]
+    (user-subs {:biff/conn node} {:user/id "user1"})),
+   :result
+   {:user/subscriptions [{:xt/id "sub1"}],
+    :user/unsubscribed [{:xt/id "sub2"}]}}
+  _
+  {:doc "latest-email-item",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1",
+        :item.email/sub "sub1",
+        :item/ingested-at (t/zdt 2000)}
+       {:xt/id "item2",
+        :item.email/sub "sub1",
+        :item/ingested-at (t/zdt 2001)}
+       {:xt/id "item3",
+        :item.email/sub "sub2",
+        :item/ingested-at (t/zdt 2002)}]}]
+    {:email-doc-type
+     (latest-email-item
+      {:biff/conn node}
+      {:sub/doc-type :sub/email, :sub/id "sub1"}),
+     :feed-doc-type
+     (latest-email-item
+      {:biff/conn node}
+      {:sub/doc-type :sub/feed, :sub/id "sub1"}),
+     :no-items
+     (latest-email-item
+      {:biff/conn node}
+      {:sub/doc-type :sub/email, :sub/id "sub3"})}),
+   :result
+   {:email-doc-type {:sub.email/latest-item {:xt/id "item2"}},
+    :feed-doc-type nil,
+    :no-items nil}}
+  _
+  {:doc "total",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item.email/sub "sub1"}
+       {:xt/id "item2", :item.email/sub "sub1"}
+       {:xt/id "item3", :item.feed/feed "feed1"}]}]
+    (total
+     {:biff/conn node}
+     [{:sub/source-id "sub1", :sub/doc-type :sub/email}
+      {:sub/source-id "feed1", :sub/doc-type :sub/feed}
+      {:sub/source-id "feed2", :sub/doc-type :sub/feed}])),
+   :result
+   [{:sub/source-id "sub1", :sub/total 2}
+    {:sub/source-id "feed1", :sub/total 1}
+    {:sub/source-id "feed2", :sub/total 0}]}
+  _
+  {:doc "items-read",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item.email/sub "sub1"}
+       {:xt/id "item2", :item.email/sub "sub1"}
+       {:xt/id "item3", :item.feed/feed "feed1"}],
+      :user-item
+      [{:xt/id "user-item1",
+        :user-item/user "user1",
+        :user-item/item "item1",
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (items-read
+     {:biff/conn node}
+     [{:sub/source-id "sub1",
+       :sub/doc-type :sub/email,
+       :sub/user "user1"}
+      {:sub/source-id "feed1",
+       :sub/doc-type :sub/feed,
+       :sub/user "user1"}])),
+   :result
+   [{:sub/user "user1", :sub/source-id "sub1", :sub/items-read 1}
+    {:sub/user "user1", :sub/source-id "feed1", :sub/items-read 0}]}
+  _
+  {:doc "items-unread",
+   :eval (items-unread {:sub/total 5, :sub/items-read 2}),
+   :result {:sub/items-unread 3, :sub/unread 3}}
+  _
+  {:doc "published-at",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1",
+        :item.email/sub "sub1",
+        :item/ingested-at (t/zdt 2000)}
+       {:xt/id "item2",
+        :item.email/sub "sub1",
+        :item/published-at (t/zdt 2001)}
+       {:xt/id "item3",
+        :item.feed/feed "feed1",
+        :item/ingested-at (t/zdt 2002)}]}]
+    (published-at
+     {:biff/conn node}
+     [{:sub/source-id "sub1",
+       :sub/doc-type :sub/email,
+       :sub/created-at (t/zdt 2003)}
+      {:sub/source-id "feed1",
+       :sub/doc-type :sub/feed,
+       :sub/created-at (t/zdt 2004)}
+      {:sub/source-id "feed2",
+       :sub/doc-type :sub/feed,
+       :sub/created-at (t/zdt 2005)}])),
+   :result
+   [{:sub/source-id "sub1",
+     :sub/published-at #time/zoned-date-time "2001-01-01T00:00Z[UTC]"}
+    {:sub/source-id "feed1",
+     :sub/published-at #time/zoned-date-time "2002-01-01T00:00Z[UTC]"}
+    {:sub/source-id "feed2",
+     :sub/published-at
+     #time/zoned-date-time "2005-01-01T00:00Z[UTC]"}]}
+  _
+  {:doc "items",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item.email/sub "sub1"}
+       {:xt/id "item2", :item.email/sub "sub1"}
+       {:xt/id "item3", :item.feed/feed "feed1"}]}]
+    (items
+     {:biff/conn node}
+     [{:sub/source-id "sub1", :sub/doc-type :sub/email}
+      {:sub/source-id "feed1", :sub/doc-type :sub/feed}
+      {:sub/source-id "feed2", :sub/doc-type :sub/feed}])),
+   :result
+   [{:sub/source-id "sub1",
+     :sub/items [{:xt/id "item2"} {:xt/id "item1"}]}
+    {:sub/source-id "feed1", :sub/items [{:xt/id "item3"}]}
+    {:sub/source-id "feed2", :sub/items []}]}
+  _
+  {:doc "latest-item",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1",
+        :item.email/sub "sub1",
+        :item/ingested-at (t/zdt 2000)}
+       {:xt/id "item2",
+        :item.email/sub "sub1",
+        :item/published-at (t/zdt 2001)}
+       {:xt/id "item3",
+        :item.feed/feed "feed1",
+        :item/ingested-at (t/zdt 2002)}]}]
+    (latest-item
+     {:biff/conn node}
+     [{:sub/source-id "sub1",
+       :sub/doc-type :sub/email,
+       :sub/published-at (t/zdt 2001)}
+      {:sub/source-id "feed1",
+       :sub/doc-type :sub/feed,
+       :sub/published-at (t/zdt 2002)}])),
+   :result
+   [{:sub/source-id "sub1", :sub/latest-item {:xt/id "item2"}}
+    {:sub/source-id "feed1", :sub/latest-item {:xt/id "item3"}}]}
+  _
+  {:doc "from-params",
+   :eval
+   (t/with-node
+    [node
+     {:sub
+      [{:xt/id "sub1", :sub/user "user1"}
+       {:xt/id "sub2",
+        :sub/user "user1",
+        :sub.email/unsubscribed-at (t/zdt 2000)}]}]
+    (doall
+     (for
+      [user-id ["user1" "user2"]]
+      (from-params
+       {:biff/conn node,
+        :session {:uid user-id},
+        :params {:sub/id "sub1"}}
+       {})))),
+   :result ({:params/sub {:xt/id "sub1", :sub/user "user1"}} nil)}
+  _
+  {:doc "params-checked",
+   :eval
+   (t/with-node
+    [node
+     {:sub
+      [{:xt/id (t/uuid 0), :sub/user "user1"}
+       {:xt/id (t/uuid 1),
+        :sub/user "user1",
+        :sub.email/unsubscribed-at (t/zdt 2000)}
+       {:xt/id (t/uuid 2), :sub/user "user2"}]}]
+    {:valid
+     (params-checked
+      {:biff/conn node,
+       :session {:uid "user1"},
+       :params {:subs {(str (t/uuid 0)) nil, (str (t/uuid 1)) nil}}}
+      {}),
+     :unauthorized
+     (params-checked
+      {:biff/conn node,
+       :session {:uid "user1"},
+       :params {:subs {(str (t/uuid 0)) nil, (str (t/uuid 2)) nil}}}
+      {}),
+     :missing
+     (params-checked
+      {:biff/conn node,
+       :session {:uid "user1"},
+       :params {:subs {(str (t/uuid 0)) nil, (str (t/uuid 3)) nil}}}
+      {})}),
+   :result
+   {:valid
+    {:params.checked/subscriptions
+     [{:xt/id #uuid "00000000-0000-0000-0000-000000000000",
+       :sub/user "user1"}
+      {:xt/id #uuid "00000000-0000-0000-0000-000000000001",
+       :sub/user "user1"}]},
+    :unauthorized nil,
+    :missing nil}}
+  _
+  {:doc "unread-items",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item.email/sub "sub1"}
+       {:xt/id "item2", :item.email/sub "sub1"}
+       {:xt/id "item3", :item.feed/feed "feed1"}],
+      :sub
+      [{:xt/id "sub1", :sub/user "user1"}
+       {:xt/id "feed1", :sub/user "user1"}],
+      :user-item
+      [{:xt/id "user-item1",
+        :user-item/user "user1",
+        :user-item/item "item1",
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (unread-items
+     {:biff/conn node}
+     [{:sub/user {:xt/id "user1"},
+       :sub/items [{:xt/id "item1"} {:xt/id "item2"}]}
+      {:sub/user {:xt/id "user1"}, :sub/items [{:xt/id "item3"}]}])),
+   :result
+   [{:sub/unread-items [{:xt/id "item2"}]}
+    {:sub/unread-items [{:xt/id "item3"}]}]}
+  _
+  {:doc :mv,
+   :eval
+   (t/with-node
+    [node {:mv-sub [{:xt/id "mv-sub1", :mv.sub/sub "sub1"}]}]
+    (mv {:biff/conn node} [{:xt/id "sub1"}])),
+   :result [{:xt/id "sub1", :sub/mv {:xt/id "mv-sub1"}}]}
+  _]}
