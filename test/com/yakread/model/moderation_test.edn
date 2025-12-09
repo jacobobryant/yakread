@@ -1,0 +1,34 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.model.moderation :refer :all]],
+ :tests
+ [{:eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1",
+        :item/url "url1",
+        :item/doc-type :item/direct,
+        :item.direct/candidate-status :approved}
+       {:xt/id "item2", :item/url "url2", :item/doc-type :item/direct}
+       {:xt/id "item3",
+        :item/url "url3",
+        :item/doc-type :item/direct}]}]
+    (next-batch
+     {:biff/conn node,
+      :yakread.model/all-liked-items
+      [{:item/id "item1", :item/n-likes 2}
+       {:item/id "item2", :item/n-likes 3}]}
+     {})),
+   :result
+   {:admin.moderation/remaining 1,
+    :admin.moderation/approved 1,
+    :admin.moderation/blocked 0,
+    :admin.moderation/ingest-failed 0,
+    :admin.moderation/next-batch
+    [{:xt/id "item2",
+      :item/url "url2",
+      :item/doc-type :item/direct,
+      :item/n-likes 3}]}}
+  _]}
