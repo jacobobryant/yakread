@@ -1,9 +1,9 @@
 (ns com.yakread.model.user.export 
   (:require
-   [com.biffweb :refer [q]]
+   [clojure.data.csv :as csv]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]
-   [rum.core :as rum]
-   [clojure.data.csv :as csv]))
+   [rum.core :as rum]))
 
 (defn- generate-opml [urls]
   (str
@@ -15,40 +15,45 @@
            (for [url urls]
              [:<> "    " [:outline {:type "rss" :xmlUrl url}] "\n"])]])))
 
-(defresolver feed-subs [{:keys [biff/db]} {:keys [user/id]}]
+(defresolver feed-subs [{:keys [biff/conn]} {:keys [user/id]}]
   {::pco/input [:user/id]}
   {:user.export/feed-subs
-   (->> (q db
-           '{:find url
-             :in [user]
-             :where [[sub :sub/user user]
-                     [sub :sub.feed/feed feed]
-                     [feed :feed/url url]]}
-           id)
+   (->> (biffx/q conn
+                 {:select :feed/url
+                  :from :sub
+                  :join [:feed [:= :sub.feed/feed :feed._id]]
+                  :where [:= :sub/user id]})
+        (mapv :feed/url)
         sort
         generate-opml)})
+
+;; TODO
+;; - make this part of biffx/q
+;; - pull syntax
+;; - use schema + join-key to infer table, nest one vs. nest many
+(defn- nest-one [join-key table columns]
+  [[:nest_one {:select columns
+               :from table
+               :where [:= :xt/id join-key]}]
+   join-key])
 
 (defn- item-resolver [op-name output-key query-key csv-label]
   (pco/resolver
    op-name
    {::pco/input [:user/id]
     ::pco/output [output-key]}
-   (fn [{:keys [biff/db]} {:keys [user/id]}]
+   (fn [{:keys [biff/conn]} {:keys [user/id]}]
      {output-key
-      (let [rows (->> (q db
-                         {:find (list 'pull
-                                      'usit
-                                      [query-key
-                                       :user-item/viewed-at
-                                       {:user-item/item
-                                        [:item/url
-                                         :item/title
-                                         :item/author-name]}])
-                           :in '[user]
-                           :timeout 999999
-                           :where [['usit :user-item/user 'user]
-                                   ['usit query-key]]}
-                         id)
+      (let [rows (->> (biffx/q conn
+                               {:select [query-key
+                                         :user-item/viewed-at
+                                         (nest-one :user-item/item
+                                                   :item
+                                                   [:item/url :item/title :item/author-name])]
+                                :from :user-item
+                                :where [:and
+                                        [:= :user-item/user id]
+                                        [:is-not query-key nil]]})
                       (sort-by query-key #(compare %2 %1))
                       (mapv (juxt (comp :item/url :user-item/item)
                                   (comp :item/title :user-item/item)

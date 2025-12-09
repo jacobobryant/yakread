@@ -1,0 +1,53 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.model.user.export :refer :all]],
+ :tests
+ [{:doc "feed-subs",
+   :eval
+   (t/with-node
+    [node
+     {:sub
+      [{:xt/id "sub1", :sub/user "user1", :sub.feed/feed "feed1"}],
+      :feed [{:xt/id "feed1", :feed/url "url1"}]}]
+    (feed-subs {:biff/conn node} {:user/id "user1"})),
+   :result
+   {:user.export/feed-subs
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<opml version=\"1.0\">\n  <head><title>Yakread RSS subscriptions</title></head>\n  <body>\n    <outline type=\"rss\" xmlUrl=\"url1\"></outline>\n</body></opml>"}}
+  _
+  {:doc "bookmarks",
+   :eval
+   (t/with-node
+    [node
+     {:user-item
+      [{:xt/id "user-item1",
+        :user-item/user "user1",
+        :user-item/bookmarked-at (t/zdt 2000),
+        :user-item/viewed-at (t/zdt 2001),
+        :user-item/item "item1"}
+       {:xt/id "user-item2",
+        :user-item/user "user1",
+        :user-item/bookmarked-at (t/zdt 2002),
+        :user-item/viewed-at (t/zdt 2003),
+        :user-item/item "item2"}
+       {:xt/id "user-item3",
+        :user-item/user "user2",
+        :user-item/bookmarked-at (t/zdt 2002),
+        :user-item/viewed-at (t/zdt 2003),
+        :user-item/item "item3"}
+       {:xt/id "user-item4",
+        :user-item/user "user1",
+        :user-item/viewed-at (t/zdt 2000),
+        :user-item/item "item4"}],
+      :item
+      (for
+       [i [1 2 3 4]]
+       {:xt/id (str "item" i),
+        :item/url (str "url" i),
+        :item/title (str "title" i),
+        :item/author-name (str "author-name" i)})}]
+    (bookmarks {:biff/conn node} {:user/id "user1"})),
+   :result
+   {:user.export/bookmarks
+    "URL,Title,Author,Bookmarked at,Read at\nurl2,title2,author-name2,2002-01-01T00:00Z[UTC],2003-01-01T00:00Z[UTC]\nurl1,title1,author-name1,2000-01-01T00:00Z[UTC],2001-01-01T00:00Z[UTC]\n"}}
+  _]}
