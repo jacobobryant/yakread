@@ -96,8 +96,8 @@
     (.write *out* (str "#biff/file " (pr-str (.getPath obj))))
     (clojure.pprint/simple-dispatch obj)))
 
-(defn run-examples! []
-  (doseq [f (find-resources "_test.edn")
+(defn run-examples! [& {:keys [ext]}]
+  (doseq [f (find-resources (or ext "_test.edn"))
           :let [f-contents (read-string* (slurp f)
                                          {'error (constantly nil)})
                 ns-sym (symbol (str "tmp" (rand-int 999999)))

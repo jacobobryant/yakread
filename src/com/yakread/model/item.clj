@@ -2,95 +2,94 @@
   (:require
    [clojure.string :as str]
    [com.biffweb :as biff :refer [q]]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.s3 :as lib.s3]
    [com.yakread.lib.serialize :as lib.serialize]
    [com.yakread.lib.user-item :as lib.user-item]
    [com.yakread.routes :as routes]
-   [rum.core :as rum])
+   [rum.core :as rum]
+   [tick.core :as tick])
   (:import
-   (org.jsoup Jsoup)
-   (com.vdurmont.emoji EmojiParser)))
+   (com.vdurmont.emoji EmojiParser)
+   (org.jsoup Jsoup)))
 
-(defresolver user-favorites [{:keys [biff/db]} {:keys [user/id]}]
+(defresolver user-favorites [{:keys [biff/conn]} {:keys [user/id]}]
   #::pco{:output [{:user/favorites [:item/id]}]}
-  {:user/favorites (vec (q db
-                           '{:find [item]
-                             :keys [item/id]
-                             :in [user]
-                             :where [[user-item :user-item/user user]
-                                     [user-item :user-item/item item]
-                                     [user-item :user-item/favorited-at]]}
-                           id))})
+  {:user/favorites (biffx/q conn
+                            {:select [[:user-item/item :item/id]]
+                             :from :user-item
+                             :where [:and
+                                     [:= :user-item/user id]
+                                     [:is-not :user-item/favorited-at nil]]})})
 
-(defresolver user-bookmarks [{:keys [biff/db]} {:keys [user/id]}]
+(defresolver user-bookmarks [{:keys [biff/conn]} {:keys [user/id]}]
   #::pco{:output [{:user/bookmarks [:item/id]}]}
-  {:user/bookmarks (vec (q db
-                           '{:find [item]
-                             :keys [item/id]
-                             :in [user]
-                             :where [[user-item :user-item/user user]
-                                     [user-item :user-item/item item]
-                                     [user-item :user-item/bookmarked-at]]}
-                           id))})
+  {:user/bookmarks (biffx/q conn
+                            {:select [[:user-item/item :item/id]]
+                             :from :user-item
+                             :where [:and
+                                     [:= :user-item/user id]
+                                     [:is-not :user-item/bookmarked-at nil]]})})
 
-(defresolver unread-bookmarks [{:keys [biff/db]} {:user/keys [bookmarks]}]
+(defresolver unread-bookmarks [{:user/keys [bookmarks]}]
   #::pco{:input [{:user/bookmarks [:item/id
                                    :item/unread]}]
          :output [{:user/unread-bookmarks [:item/id]}]}
   {:user/unread-bookmarks (filterv :item/unread bookmarks)})
 
-(defresolver n-skipped [{:keys [biff/db session]} items]
+(defresolver n-skipped [{:keys [biff/conn session]} items]
   #::pco{:input [:xt/id]
          :output [:item/n-skipped]
          :batch? true}
-  (let [id->n-skipped (into {}
-                            (q db
-                               '{:find [item (count skip)]
-                                 :in [user [item ...]]
-                                 :where [[skip :skip/user user]
-                                         [skip :skip/items item]]}
-                               (:uid session)
-                               (mapv :xt/id items)))]
-    (mapv (fn [item]
-            (assoc item :item/n-skipped (get id->n-skipped (:xt/id item) 0)))
-          items)))
+  (let [results (biffx/q conn
+                         {:select [[:skip/item :xt/id]
+                                   [[:count :skip._id] :item/n-skipped]]
+                          :from :skip
+                          :join [:reclist [:= :skip/reclist :reclist._id]]
+                          :where [:and
+                                  [:= :reclist/user (:uid session)]
+                                  [:in :skip/item (mapv :xt/id items)]]})]
+    (lib.core/restore-order items
+                            :xt/id
+                            results
+                            (fn [{:keys [xt/id]}]
+                              {:xt/id id
+                               :item/n-skipped 0}))))
 
-(defresolver user-item [{:keys [biff/db session]} items]
+(defresolver user-item [{:keys [biff/conn session]} items]
   #::pco{:input [:xt/id]
          :output [{:item/user-item [:xt/id]}]
          :batch? true}
-  (let [id->user-item (update-vals
-                       (into {} (q db
-                                   '{:find [item user-item]
-                                     :in [user [item ...]]
-                                     :where [[user-item :user-item/user user]
-                                             [user-item :user-item/item item]]}
-                                   (:uid session)
-                                   (mapv :xt/id items)))
-                       #(hash-map :xt/id %))]
-    (mapv (fn [item]
-            (merge item
-                   (some->> (get id->user-item (:xt/id item))
-                            (hash-map :item/user-item))))
-          items)))
+  (let [results (into []
+                      (map (fn [{:keys [xt/id user-item/item]}]
+                             {:xt/id item :item/user-item {:xt/id id}}))
+                      (biffx/q conn
+                               {:select [:xt/id :user-item/item]
+                                :from :user-item
+                                :where [:and
+                                        [:= :user-item/user (:uid session)]
+                                        [:in :user-item/item (mapv :xt/id items)]]}))]
+    (lib.core/restore-order items :xt/id results)))
 
-(defresolver image-from-feed [{:keys [biff/db]} items]
+(defresolver image-from-feed [{:keys [biff/conn]} items]
   #::pco{:input [(? :item/feed-url)
                  {(? :item.feed/feed) [:feed/image-url]}]
          :output [:item/image-url]
          :batch? true}
-  (let [url->image (into {} (q db
-                               '{:find [url image]
-                                 :in [[url ...]]
-                                 :where [[feed :feed/url url]
-                                         [feed :feed/image-url image]]}
-                               (keep :item/feed-url items)))]
-    (vec
-     (for [{:keys [item.feed/feed item/feed-url] :as item} items]
-       (when-some [image (or (:feed/image-url feed)
-                             (url->image feed-url))]
-         {:item/image-url image})))))
+  (let [url->image (into {}
+                         (map (juxt :feed/url :feed/image-url))
+                         (biffx/q conn
+                                  {:select [:feed/url :feed/image-url]
+                                   :from :feed
+                                   :where [:in :feed/url (keep :item/feed-url items)]}))]
+    (mapv (fn [{:keys [item.feed/feed item/feed-url]}]
+            (if-some [image (or (:feed/image-url feed)
+                                (url->image feed-url))]
+              {:item/image-url image}
+              {}))
+          items)))
 
 (defresolver unread [{:keys [item/user-item]}]
   #::pco{:input [{(? :item/user-item) [(? :user-item/viewed-at)
@@ -100,29 +99,32 @@
                                        (? :user-item/reported-at)]}]}
   {:item/unread (not (lib.user-item/read? user-item))})
 
-(defresolver history-items [{:keys [biff/db] :as ctx}
+(defresolver history-items [{:keys [biff/conn] :as ctx}
                             {:keys [session/user
                                     params/paginate-after]}]
   #::pco{:input [{:session/user [:xt/id]}
                  (? :params/paginate-after)]
          :output [{:user/history-items [:xt/id
                                         {:item/user-item [:xt/id]}]}]}
-  (let [{:keys [batch-size]
-         :or {batch-size 100}} (pco/params ctx)]
+  (let [{:keys [batch-size] :or {batch-size 100}} (pco/params ctx)]
     {:user/history-items
-     (->> (q db
-             '{:find [(pull user-item [*])]
-               :in [user]
-               :where [[user-item :user-item/user user]]}
-             (:xt/id user))
-          (keep (fn [[usit]]
+     (->> (biffx/q conn
+                   {:select [:xt/id
+                             :user-item/item
+                             :user-item/viewed-at
+                             :user-item/favorited-at
+                             :user-item/disliked-at
+                             :user-item/reported-at]
+                    :from :user-item
+                    :where [:= :user-item/user (:xt/id user)]})
+          (keep (fn [usit]
                   (when-some [t (some->> [:user-item/viewed-at
                                           :user-item/favorited-at
                                           :user-item/disliked-at
                                           :user-item/reported-at]
                                          (keep usit)
                                          not-empty
-                                         (apply max-key inst-ms))]
+                                         (apply tick/max))]
                     (assoc usit :t t))))
           (sort-by :t #(compare %2 %1))
           (drop-while (fn [{:keys [user-item/item]}]
@@ -135,7 +137,7 @@
                    :item/user-item {:xt/id id}})))}))
 
 ;; TODO why do I have to put ? in the input?
-(defresolver current-item [{:keys [biff/db]} input]
+(defresolver current-item [input]
   #::pco{:input [{(? :user/mv) [{(? :mv.user/current-item) [:xt/id]}]}]
          :output [{:user/current-item [:item/id :item/rec-type]}]}
   (when-some [id (get-in input [:user/mv :mv.user/current-item :xt/id])]
@@ -150,18 +152,23 @@
   (when-some [source (or sub feed)]
     {:item/source source}))
 
-(defresolver sub [{:keys [biff/db session]} {:keys [item/id item.email/sub item.feed/feed]}]
-  {::pco/input [:item/id
-                {(? :item.email/sub) [:xt/id]}
+(defresolver sub [{:keys [biff/conn session]} inputs]
+  {::pco/input [{(? :item.email/sub) [:xt/id]}
                 {(? :item.feed/feed) [:xt/id]}]
    ::pco/output [{:item/sub [:xt/id]}]}
-  (when-some [sub (or sub
-                      (when feed
-                        (some->> (biff/lookup-id db
-                                                 :sub/user (:uid session)
-                                                 :sub.feed/feed (:xt/id feed))
-                                 (hash-map :xt/id))))]
-    {:item/sub sub}))
+  (let [feed->sub (into {}
+                        (map (juxt :sub.feed/feed :xt/id))
+                        (biffx/q conn
+                                 {:select [:xt/id :sub.feed/feed]
+                                  :from :sub
+                                  :where [:and
+                                          [:= :sub/user (:uid session)]
+                                          [:in :sub.feed/feed (keep (comp :xt/id :item.feed/feed) inputs)]]}))]
+    (mapv (fn [{:keys [item.email/sub item.feed/feed]}]
+            (if-some [sub (or (:xt/id sub) (get feed->sub (:xt/id feed)))]
+              {:item/sub {:xt/id sub}}
+              {}))
+          inputs)))
 
 (defresolver from-params-unsafe [{:keys [path-params params]} _]
   #::pco{:output [{:params/item-unsafe [:xt/id]}]}
@@ -240,25 +247,35 @@
 (defresolver clean-title [{:keys [item/title]}]
   {:item/clean-title (str/trim (EmojiParser/removeAllEmojis title))})
 
-(defresolver digest-sends [{:keys [biff/db session]} items]
+(defresolver digest-sends [{:keys [biff/conn session]} items]
   {::pco/input [:xt/id]
    ::pco/output [:item/n-digest-sends]
    ::pco/batch? true}
-  (let [user-id (:uid session)
-        item-ids (mapv :xt/id items)
-        item->n-digests (into {}
-                              (q db
-                                 '{:find [item (count digest)]
-                                   :in [user [item ...]]
-                                   :timeout 999999
-                                   :where [[digest :digest/user user]
-                                           (or-join [digest item]
-                                             [digest :digest/ad item]
-                                             [digest :digest/icymi item]
-                                             [digest :digest/discover item])]}
-                                 user-id
-                                 item-ids))]
-    (mapv #(assoc % :item/n-digest-sends (get item->n-digests (:xt/id %) 0)) items)))
+  (let [results (biffx/q conn
+                         {:union
+                          [{:select [[:digest/ad :xt/id]
+                                     [[:count :xt/id]
+                                      :item/n-digest-sends]]
+                            :from :digest
+                            :where [:and
+                                    [:= :digest/user (:uid session)]
+                                    [:in :digest/ad (mapv :xt/id items)]]}
+                           {:select [[:digest-item/item :xt/id]
+                                     [[:count :digest-item/digest]
+                                      :item/n-digest-sends]]
+                            :from :digest-item
+                            :join [:digest [:= :digest-item/digest :digest._id]]
+                            :where [:and
+                                    [:= :digest/user (:uid session)]
+                                    ;; TODO seems like it might be faster without this assuming #
+                                    ;; digests is << # candidate items
+                                    [:in :digest-item/item (mapv :xt/id items)]]}]})]
+    (lib.core/restore-order items
+                            :xt/id
+                            results
+                            (fn [{:keys [xt/id]}]
+                              {:xt/id id
+                               :item/n-digest-sends 0}))))
 
 (def module
   {:resolvers [user-favorites
