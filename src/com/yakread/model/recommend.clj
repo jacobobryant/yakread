@@ -1,7 +1,7 @@
 (ns com.yakread.model.recommend
   (:require
    [clojure.data.generators :as gen]
-   [com.biffweb :as biff :refer [q]]
+   [com.biffweb.experimental :as biffx]
    [com.rpl.specter :as sp]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.core :as lib.core]
@@ -85,7 +85,7 @@
 
 (defresolver sub-affinity*
   "Returns the 10 most recent interactions (e.g. viewed, liked, etc) for a given sub."
-  [{:keys [biff/db]} subscriptions]
+  [{:keys [biff/conn]} subscriptions]
   {::pco/input [:sub/id
                 :sub/title
                 {:sub/user [:xt/id]}
@@ -98,21 +98,35 @@
   (let [q-inputs             (for [{:sub/keys [id user items]} subscriptions
                                    item items]
                                [(:xt/id user) id (:xt/id item)])
-        user+sub->skips      (->> (q db
-                                     '{:find [user sub t skip item]
-                                       :in [[[user sub item]]]
-                                       :where [[skip :skip/user user]
-                                               [skip :skip/items item]
-                                               [skip :skip/timeline-created-at t]]}
-                                     q-inputs)
-                                  (lib.core/group-by-to (juxt first second) #(nth % 2)))
-        user+sub->user-items (->> (q db
-                                     '{:find [user sub (pull usit [*])]
-                                       :in [[[user sub item]]]
-                                       :where [[usit :user-item/item item]
-                                               [usit :user-item/user user]]}
-                                     q-inputs)
-                                  (lib.core/group-by-to (juxt first second) #(nth % 2)))]
+        user+sub->skips      (into {}
+                                   (map (fn [{:keys [reclist/user sub/id zdts]}]
+                                          [[user id] zdts]))
+                                   (biffx/q conn
+                                            {:union-all
+                                             (for [{:sub/keys [id user items]} subscriptions]
+                                               {:select [:reclist/user
+                                                         [[:inline id] :sub/id]
+                                                         [[:array_agg :reclist/created-at]
+                                                          :zdts]]
+                                                :from :reclist
+                                                :join [:skip [:= :skip/reclist :reclist._id]]
+                                                :where [:and
+                                                        [:= :reclist/user (:xt/id user)]
+                                                        [:in :skip/item (mapv :xt/id items)]]})}))
+        user+sub->user-items (group-by (juxt :user-item/user :sub/id)
+                                       (biffx/q conn
+                                                {:union-all
+                                                 (for [{:sub/keys [id user items]} subscriptions]
+                                                   {:select [:user-item/user
+                                                             [[:inline id] :sub/id]
+                                                             :user-item/favorited-at
+                                                             :user-item/reported-at
+                                                             :user-item/disliked-at
+                                                             :user-item/viewed-at]
+                                                    :from :user-item
+                                                    :where [:and
+                                                            [:= :user-item/user (:xt/id user)]
+                                                            [:in :user-item/item (mapv :xt/id items)]]})}))]
     (mapv (fn [{:sub/keys [id user] :as sub}]
             (let [user-items   (get user+sub->user-items [(:xt/id user) id])
                   skips        (get user+sub->skips [(:xt/id user) id])
@@ -351,8 +365,7 @@
    a-items
    b-items))
 
-(defresolver candidates [{:keys [biff/db
-                                 yakread.model/get-candidates]}
+(defresolver candidates [{:keys [yakread.model/get-candidates]}
                          {user-id :user/id}]
   {::pco/input [(? :user/id)]
    ::pco/output (vec
@@ -361,34 +374,39 @@
                    {k [:xt/id
                        :candidate/type
                        :candidate/score
-                       :candidate/last-liked
-                       :candidate/n-skips]}))}
-  (let [{:keys [item ad]} (get-candidates user-id)
-        all-candidates (concat item ad)
-        ;; TODO can we just use :item/n-skipped for this?
-        item-id->n-skips (into {}
-                               (when user-id
-                                 (q db
-                                    '{:find [item (count skip)]
-                                      :in [user [item ...]]
-                                      :where [[skip :skip/user user]
-                                              [skip :skip/items item]]}
-                                    user-id
-                                    (mapv :xt/id all-candidates))))
-        assoc-n-skips #(assoc % :candidate/n-skips (get item-id->n-skips (:xt/id %) 0))]
-    {:user/item-candidates (mapv assoc-n-skips item)
-     :user/ad-candidates (mapv assoc-n-skips ad)}))
+                       :candidate/last-liked]}))}
+  (let [{:keys [item ad]} (get-candidates user-id)]
+    {:user/item-candidates item
+     :user/ad-candidates ad}))
 
-(defresolver candidate-digest-skips [{:keys [item/n-digest-sends candidate/n-skips]}]
-  {:candidate/n-skips-with-digests (+ n-digest-sends n-skips)})
+(defresolver candidate-digest-skips [{:keys [item/n-digest-sends item/n-skipped]}]
+  {:candidate/n-skips-with-digests (+ n-digest-sends n-skipped)})
 
 (defresolver item-digest-skips [{:keys [item/n-digest-sends item/n-skipped]}]
   {:item/n-skipped-with-digests (+ n-digest-sends n-skipped)})
 
+;; TODO materialize this
+(defresolver read-urls [{:keys [biff/conn]} {:keys [user/id]}]
+  {:user/read-urls (into #{}
+                         (keep :item/url)
+                         (biffx/q conn
+                                  {:select :item/url
+                                   :from :item
+                                   :join [:user-item [:= :item._id :user-item/item]]
+                                   :where [:and
+                                           [:= :user-item/user id]
+                                           [:is-not [:coalesce
+                                                     :user-item/viewed-at
+                                                     :user-item/skipped-at
+                                                     :user-item/favorited-at
+                                                     :user-item/disliked-at
+                                                     :user-item/reported-at]
+                                            nil]]}))})
+
 (defn discover-recs-resolver [{:keys [op-name output-key n-skips-key n-recs]}]
   (pco/resolver
    op-name
-   {::pco/input [(? :user/id)
+   {::pco/input [(? :user/read-urls)
                  {:user/item-candidates [:xt/id
                                          :item/url
                                          :candidate/score
@@ -396,25 +414,10 @@
                                          n-skips-key]}]
     ::pco/output [{output-key [:xt/id
                                :item/rec-type]}]}
-   (fn [{:keys [biff/db]}
-        {user-id :user/id
-         candidates :user/item-candidates}]
-     (let [;; TODO use an LRU cache probably
-           read? (fn [url]
-                   (boolean
-                    (not-empty
-                     (q db
-                        '{:find [url]
-                          :in [user url]
-                          :where [[usit :user-item/user user]
-                                  [usit :user-item/item item]
-                                  [item :item/url url]
-                                  (or [usit :user-item/viewed-at _]
-                                      [usit :user-item/favorited-at _]
-                                      [usit :user-item/disliked-at _]
-                                      [usit :user-item/reported-at _])]}
-                        user-id
-                        url))))
+   (fn [{candidates :user/item-candidates
+         :keys [read-urls]}]
+     (let [read? (fn [url]
+                   (contains? read-urls url))
 
            candidates (vec candidates) ; does this matter?
            url->host (into {} (map (juxt :item/url (comp :host uri/uri :item/url))) candidates)
@@ -448,7 +451,7 @@
 (def discover-recs
   (discover-recs-resolver {:op-name `discover-recs
                            :output-key :user/discover-recs
-                           :n-skips-key :candidate/n-skips
+                           :n-skips-key :item/n-skipped
                            :n-recs n-for-you-recs}))
 
 (def digest-discover-recs
@@ -460,14 +463,22 @@
 (defresolver ad-score [{:keys [candidate/score ad/effective-bid]}]
   {:candidate/ad-score (* (max 0.0001 score) effective-bid)})
 
-(defresolver ad-rec [{:keys [biff/db]}
-                     {:keys [user/premium]
+(defresolver clicked-ads [{:keys [biff/conn]} {:keys [user/id]}]
+  {:user/clicked-ads (into #{}
+                           (map :ad.click/ad)
+                           (biffx/q conn
+                                    {:select :ad.click/ad
+                                     :from :ad-click
+                                     :where [:= :ad.click/user id]}))})
+
+(defresolver ad-rec [{:user/keys [premium clicked-ads]
                       user-id :user/id
                       candidates :user/ad-candidates}]
   {::pco/input [(? :user/id)
                 (? :user/premium)
+                (? :user/clicked-ads)
                 {:user/ad-candidates [:xt/id
-                                      :candidate/n-skips
+                                      :item/n-skipped
                                       :candidate/ad-score
                                       :ad/effective-bid
                                       :ad/approve-state
@@ -478,19 +489,9 @@
                                 :ad/click-cost
                                 :item/rec-type]}]}
   (when-not premium
-    (let [clicked-ads (into #{}
-                            (map first)
-                            (when user-id
-                              (q db
-                                 '{:find [ad]
-                                   :in [user [ad ...]]
-                                   :where [[click :ad.click/user user]
-                                           [click :ad.click/ad ad]]}
-                                 user-id
-                                 (mapv :xt/id candidates))))
-          [first-ad second-ad] (->> candidates
+    (let [[first-ad second-ad] (->> candidates
                                     (remove (fn [{:keys [xt/id] :ad/keys [user paused approve-state]}]
-                                              (or (clicked-ads id)
+                                              (or (contains? clicked-ads id)
                                                   (not= approve-state :approved)
                                                 (= user-id (:xt/id user))
                                                 paused
@@ -500,7 +501,7 @@
                                                 ;; account wasn't removed.
                                                 (nil? (:user/email user)))))
                                   gen/shuffle
-                                  (sort-by :candidate/n-skips)
+                                  (sort-by :item/n-skipped)
                                   (take-rand 2)
                                   (sort-by :candidate/ad-score >))
         ;; `click-cost` is the minimum amount that (:ad/bid first-ad) could've been while still
@@ -601,9 +602,13 @@
                selected-subs
                icymi-recs
                candidate-digest-skips
-               item-digest-skips]})
+               item-digest-skips
+               read-urls
+               clicked-ads]})
 
 (comment
+
+  (require '[com.biffweb :as biff])
 
   (let [ctx (biff/merge-context @com.yakread/system)
         user-id (biff/lookup-id (:biff/db ctx) :user/email "jacob@thesample.ai")]

@@ -31,26 +31,30 @@
    :result (1 2 3 :a :b 4 :c :d 5)}
   _
   {:eval
-   (t/with-db
-    [db
-     [{:xt/id "skip1",
-       :skip/user "user1",
-       :skip/items ["item1" "item2"],
-       :skip/timeline-created-at #time/instant "2000-01-01T00:00:00Z"}
-      {:xt/id "usit1",
-       :user-item/item "item3",
-       :user-item/user "user1",
-       :user-item/favorited-at #time/instant "2001-01-01T00:00:00Z"}
-      {:xt/id "skip2",
-       :skip/user "user1",
-       :skip/items ["item4"],
-       :skip/timeline-created-at #time/instant "2002-01-01T00:00:00Z"}
-      {:xt/id "usit2",
-       :user-item/item "item5",
-       :user-item/user "user1",
-       :user-item/viewed-at #time/instant "2003-01-01T00:00:00Z"}]]
+   (t/with-node
+    [node
+     {:skip
+      [{:xt/id "skip1", :skip/reclist "reclist1", :skip/item "item1"}
+       {:xt/id "skip2", :skip/reclist "reclist1", :skip/item "item2"}
+       {:xt/id "skip3", :skip/reclist "reclist2", :skip/item "item4"}],
+      :reclist
+      [{:xt/id "reclist1",
+        :reclist/user "user1",
+        :reclist/created-at (t/zdt 2000)}
+       {:xt/id "reclist2",
+        :reclist/user "user1",
+        :reclist/created-at (t/zdt 2002)}],
+      :user-item
+      [{:xt/id "usit1",
+        :user-item/item "item3",
+        :user-item/user "user1",
+        :user-item/favorited-at (t/zdt 2001)}
+       {:xt/id "usit2",
+        :user-item/item "item5",
+        :user-item/user "user1",
+        :user-item/viewed-at (t/zdt 2003)}]}]
     (sub-affinity*
-     {:biff/db db}
+     {:biff/conn node}
      [{:sub/id "sub1",
        :sub/title "my sub",
        :sub/user {:xt/id "user1"},
@@ -70,9 +74,12 @@
      :sub/items [{:xt/id "item1"} {:xt/id "item2"} {:xt/id "item3"}],
      :sub/user {:xt/id "user1"},
      :sub/all-interactions
-     ({:action :skipped, :t #time/instant "2000-01-01T00:00:00Z"}
-      {:action :skipped, :t #time/instant "2000-01-01T00:00:00Z"}
-      {:action :favorited, :t #time/instant "2001-01-01T00:00:00Z"})}
+     ({:action :skipped,
+       :t #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}
+      {:action :skipped,
+       :t #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}
+      {:action :favorited,
+       :t #time/zoned-date-time "2001-01-01T00:00Z[UTC]"})}
     {:sub/n-interactions 2,
      :sub/new false,
      :sub/affinity-low* 0.27354641067767876,
@@ -83,8 +90,10 @@
      :sub/items [{:xt/id "item4"} {:xt/id "item5"}],
      :sub/user {:xt/id "user1"},
      :sub/all-interactions
-     ({:action :skipped, :t #time/instant "2002-01-01T00:00:00Z"}
-      {:action :viewed, :t #time/instant "2003-01-01T00:00:00Z"})}]}
+     ({:action :skipped,
+       :t #time/zoned-date-time "2002-01-01T00:00Z[UTC]"}
+      {:action :viewed,
+       :t #time/zoned-date-time "2003-01-01T00:00Z[UTC]"})}]}
   _
   {:eval
    (binding
@@ -193,4 +202,34 @@
      {:item/id "item1",
       :item/ingested-at #time/instant "2001-01-01T00:00:00Z",
       :item/n-skipped 1}]}}
+  _
+  {:doc "read-urls",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item2", :item/url "url2"}],
+      :user-item
+      [{:xt/id "user-item1",
+        :user-item/user "user1",
+        :user-item/item "item1"}
+       {:xt/id "user-item2",
+        :user-item/user "user1",
+        :user-item/item "item2",
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (read-urls {:biff/conn node} {:user/id "user1"})),
+   :result {:user/read-urls #{"url2"}}}
+  _
+  {:doc "clicked-ads",
+   :eval
+   (t/with-node
+    [node
+     {:ad-click
+      [{:xt/id "ad-click1", :ad.click/ad "ad1", :ad.click/user "user1"}
+       {:xt/id "ad-click2",
+        :ad.click/ad "ad2",
+        :ad.click/user "user2"}]}]
+    (clicked-ads {:biff/conn node} {:user/id "user1"})),
+   :result {:user/clicked-ads #{"ad1"}}}
   _]}
