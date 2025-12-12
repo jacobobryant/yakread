@@ -61,7 +61,9 @@
          :body (render response)}
 
         (vector? (:body response))
-        (update response :body render)
+        (merge {:status 200
+                :headers {"content-type" "text/html"}}
+               (update response :body render))
 
         :else
         response))))

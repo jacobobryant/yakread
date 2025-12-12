@@ -1,22 +1,9 @@
 (ns com.yakread.lib.fx
-  (:refer-clojure :exclude [spit])
   (:require
-   [clojure.java.io :as io]
-   [clojure.java.shell :as shell]
-   [cheshire.core :as cheshire]
    [clj-http.client :as http]
-   [clojure.data.generators :as gen]
-   [clojure.tools.logging :as log]
-   [clojure.walk :as walk]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
-   [com.yakread.lib.datastar :as lib.d*]
-   [com.yakread.lib.error :as lib.error]
-   [com.yakread.lib.pathom :as lib.pathom]
-   [com.yakread.lib.s3 :as lib.s3]
-   [remus]
-   ;;[xtdb.api :as xt]
-   [taoensso.tufte :refer [p]]))
+   [com.yakread.lib.pathom :as lib.pathom]))
 
 ;; TODO add observability/monitoring stuff
 ;; and exception catching stuff
@@ -72,46 +59,55 @@
     (assert (safe-for-url? (str ns*)) (str "URL segment would contain invalid characters: " ns*))
     href))
 
+(let [all-methods [:get :post :put :delete :head :options :trace :patch :connect]]
+  (defn route* [uri & {:as state->transition-fn}]
+    (let [machine* (machine state->transition-fn)]
+      [uri
+       (into {}
+             (comp (filter state->transition-fn)
+                   (map (fn [method]
+                          [method machine*])))
+             all-methods)])))
+
+(defn wrap-pathom [f]
+  (fn [ctx]
+    (f ctx (:biff.fx/pathom ctx))))
+
+(defn wrap-hiccup [f]
+  (fn [& args]
+    (let [result (apply f args)]
+      (if (and (vector? result) (keyword? (first result)))
+        {:body result}
+        result))))
+
 (defmacro defroute [sym & args]
   (let [[uri & kvs] (if (string? (first args))
                       args
                       (into [nil] args))
-        uri (or uri (autogen-endpoint *ns* sym))
-        all-methods [:get :post :put :delete :head :options :trace :patch :connect]
-        ]
-    `(let [params#  (array-map ~@kvs)
-           machine# (machine
-                     (merge {:start (fn [{:keys [~'request-method]}]
-                                      {:biff.fx/next ~'request-method})}
-                            params#))]
+        uri (or uri (autogen-endpoint *ns* sym))]
+    `(let [params# (array-map ~@kvs)]
        (def ~sym
-         [~uri
-          (into {}
-                (comp (filter params#)
-                      (map (fn [method#]
-                             [method# machine#])))
-                ~all-methods)]))))
+         (route* ~uri (-> params#
+                          (update-vals wrap-hiccup)
+                          (merge {:start (fn [{:keys [~'request-method]}]
+                                           {:biff.fx/next ~'request-method})})))))))
 
 (defmacro defroute-pathom [sym & args]
-  (let [[uri method query f & kvs] (if (string? (first args))
-                                     args
-                                     (into [nil] args))
+  (let [[uri query & kvs] (if (string? (first args))
+                            args
+                            (into [nil] args))
         uri (or uri (autogen-endpoint *ns* sym))]
-    `(let [method# ~method
-           params# (apply array-map ~kvs)
-           f# ~f
-           machine# (machine
-                     (merge {:start (fn [_]
-                                      {:biff.fx/pathom ~query
-                                       :biff.fx/next method#})
-                             method# (fn [ctx#]
-                                       (f# ctx# (:biff.fx/pathom ctx#)))}
-                            params#))]
+    `(let [query# ~query
+           params# (array-map ~@kvs)]
        (def ~sym
-         [~uri {method# machine#}]))))
+         (route* ~uri (-> params#
+                          (update-vals (comp wrap-hiccup wrap-pathom))
+                          (merge {:start (fn [{:keys [~'request-method]}]
+                                           {:biff.fx/pathom query#
+                                            :biff.fx/next ~'request-method})})))))))
 
 (def handlers
-  {:biff.fx/http (fn [ctx request]
+  {:biff.fx/http (fn [_ctx request]
                    (-> (http/request request)
                        (assoc :url (:url request))
                        (dissoc :http-client)))
@@ -120,20 +116,13 @@
                     ;; to a particular provider. For sending digests we need mailersend-specific
                     ;; features, so we use :biff.pipe/http there instead.
                     (send-email ctx input))
-   ;; TODO
-   ;;:biff.pipe/tx (fn [{:biff.pipe.tx/keys [input retry] :as ctx}]
-   ;;                (assoc ctx :biff.pipe.tx/output
-   ;;                       (biff/submit-tx
-   ;;                         (cond-> ctx
-   ;;                           (some? retry) (assoc :biff.xtdb/retry retry))
-   ;;                         (replace-db-now input))))
-   :biff.fx/submit-tx biffx/submit-tx
+   :biff.fx/tx biffx/submit-tx
    :biff.fx/pathom (fn [ctx input]
                      (let [{:keys [entity query]} (if (map? input)
                                                     input
                                                     {:query input})]
                        (lib.pathom/process ctx (or entity {}) query)))
-   :biff.fx/slurp (fn [ctx file]
+   :biff.fx/slurp (fn [_ctx file]
                     (slurp file))
    :biff.fx/queue (fn [ctx {:keys [id job wait-for-result]}]
                     (cond-> ((if wait-for-result
