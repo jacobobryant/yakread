@@ -10,7 +10,8 @@
    [lambdaisland.uri :as uri]
    [reitit.core :as reitit]
    [ring.middleware.anti-forgery :as csrf]
-   [taoensso.nippy :as nippy]))
+   [taoensso.nippy :as nippy]
+   [com.wsscode.pathom3.connect.operation :refer [?]]))
 
 (defn- encode-uuid [x]
   (if (uuid? x)
@@ -110,8 +111,6 @@
   `(def ~sym [~(autogen-endpoint *ns* sym)
               {:name ~(keyword (str *ns*) (str sym))
                :post (wrap-nippy-params (lib.pipe/make ~@pipe-args))}]))
-
-(def ? lib.pathom/?)
 
 (defmacro defpost-pathom [sym query f & args]
   `(defpost ~sym

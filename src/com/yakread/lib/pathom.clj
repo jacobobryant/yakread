@@ -3,35 +3,9 @@
    [clojure.data.generators :as gen]
    [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.operation :as pco]
-   [com.wsscode.pathom3.connect.runner :as runner]
-   [com.wsscode.pathom3.interface.eql :as eql]
+   [com.wsscode.pathom3.interface.eql :as p.eql]
    [com.yakread.lib.error :as lib.error]
-   [taoensso.tufte :refer [p]]
-   #_[xtdb.api :as xt]))
-
-;; TODO try to do this without monkey patching
-(alter-var-root #'runner/processor-exception (constantly (fn [_ ex] ex)))
-(alter-var-root #'runner/report-resolver-error (constantly (fn [_ _ ex] (throw ex))))
-
-(def ? pco/?)
-
-(defn process [{:keys [::resolver-cache] :or {resolver-cache (atom {})} :as ctx} & args]
-  (try
-    (do #_#_with-open [db (if (:biff.index/indexes ctx)
-                            (biff/open-db-with-index ctx)
-                            (xt/open-db (:biff.xtdb/node ctx)))]
-      (apply eql/process
-             (-> ctx
-                 #_(assoc :biff/db db :biff.db/basis (xt/db-basis db))
-                 (runner/with-resolver-cache resolver-cache))
-             args))
-    (catch Exception e
-      (if-some [unreachable (get-in (ex-data e)
-                                    [:com.wsscode.pathom3.connect.planner/graph
-                                     :com.wsscode.pathom3.connect.planner/unreachable-paths])]
-        (throw (ex-info "Pathom can't find a path for the current entity"
-                        {:pathom/unreachable-paths unreachable}))
-        (throw e)))))
+   [taoensso.tufte :refer [p]]))
 
 (defn handler [query f]
   (fn handler*
@@ -41,7 +15,7 @@
            request (merge request extra)]
        (binding [gen/*rnd* (java.util.Random. (:biff/seed extra))]
          (lib.error/with-ex-data (merge (lib.error/request-ex-data request) extra)
-           (handler* request (process request query))))))
+           (handler* request (p.eql/process request query))))))
     ([request input]
      (f request input))))
 

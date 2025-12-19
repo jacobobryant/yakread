@@ -3,7 +3,7 @@
    [clojure.string :as str]
    [com.yakread.lib.item :as lib.item]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.pathom :as lib.pathom :refer [?]]
+   [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.pipeline :as lib.pipe]
    [com.yakread.lib.route :refer [defget defpost href hx-redirect]]
    [com.yakread.lib.ui :as ui]

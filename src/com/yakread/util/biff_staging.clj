@@ -55,6 +55,13 @@
 (defn field-asts [malli-opts]
   (apply merge (vals (schema-info malli-opts))))
 
+(defn- expects [env]
+  (-> env
+      ::pcp/node
+      ::pcp/expects
+      keys
+      vec))
+
 (defn xtdb2-resolvers [malli-opts]
   ;; TODO maybe add reverse resolvers too
   (for [[schema attrs] (schema-info malli-opts)
@@ -73,32 +80,22 @@
                                        (if (ref? k)
                                          {k [:xt/id]}
                                          k)))
-                   ::pco/batch? true}
+                   ::pco/batch? true
+                   ::pco/cache-key (fn [env input]
+                                     [::xtdb2-resolvers schema input (expects env)])}
                   (fn [{:keys [biff/conn] :as env} inputs]
                     ;; TODO
                     ;; - see if the `columns` stuff causes any issues, e.g. do we need to mess with
                     ;;   the cache key. e.g. can we break it with a self-reference that requests
                     ;;   additional columns.
                     ;; - use a fixed db snapshot
-                    (let [expects (->> env
-                                       ::pcp/node
-                                       ::pcp/expects
-                                       keys)
-                          columns (into [:xt/id] (filter attrs) expects)]
+                    (let [columns (into [:xt/id] (filter attrs) (expects env))]
                       (->> (biffx/q conn
                                     {:select columns
                                      :from schema
                                      :where [:in :xt/id (mapv :xt/id inputs)]})
                            (mapv #(into {} (map joinify) %))
                            (wss-coll/restore-order inputs :xt/id)))))))
-
-;; TODO maybe use this somewhere
-;; (defn wrap-db-with-index [handler]
-;;   (fn [{:keys [biff/db] :as ctx}]
-;;     (if (satisfies? biff.proto/IndexDatasource db)
-;;       (handler ctx)
-;;       (with-open [db (biff/open-db-with-index ctx)]
-;;         (handler (assoc ctx :biff/db db))))))
 
 (defn- find-modules [search-dirs]
   (->> search-dirs

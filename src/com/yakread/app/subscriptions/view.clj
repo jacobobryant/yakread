@@ -3,7 +3,8 @@
    [com.biffweb :as biff]
    [com.yakread.lib.middleware :as lib.middle]
    [com.yakread.lib.pipeline :as lib.pipe]
-   [com.yakread.lib.route :as lib.route :refer [? defget defpost-pathom href]]
+   [com.yakread.lib.route :as lib.route :refer [defget defpost-pathom href]]
+   [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 

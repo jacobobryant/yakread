@@ -1,51 +1,84 @@
 (ns com.yakread.lib.fx
   (:require
    [clj-http.client :as http]
+   [clojure.walk :as walk]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
-   [com.yakread.lib.pathom :as lib.pathom]))
+   [com.wsscode.pathom3.interface.eql :as p.eql]))
 
-;; TODO add observability/monitoring stuff
-;; and exception catching stuff
-(defn machine [& {:as state->transition-fn}]
+(defn- truncate-str
+  "Truncates a string s to be at most n characters long, appending an ellipsis if any characters were removed."
+  [s n]
+  (if (<= (count s) n)
+    s
+    (str (subs s 0 (dec n)) "…")))
+
+(defn- truncate [data]
+  (walk/postwalk (fn [data]
+                   (if (string? data)
+                     (truncate-str data 500)
+                     data))
+                 data))
+
+(defn- step [{:keys [state->transition-fn
+                     ctx
+                     state
+                     trace]}]
+  (let [{:keys [biff.fx/handlers]} ctx
+        t-fn (or (get state->transition-fn state)
+                 (throw (ex-info "Invalid state" {:state state})))
+        result (t-fn ctx)
+        results (if (map? result)
+                  [result]
+                  result)
+        results (mapv (fn [m]
+                        (let [state-output (apply dissoc m (keys handlers))
+                              fx-input     (select-keys m (keys handlers))
+                              fx-output    (into {}
+                                                 (map (fn [[k v]]
+                                                        [k ((get handlers k)
+                                                            ctx
+                                                            v)]))
+                                                 fx-input)]
+                          {:biff.fx/state-output state-output
+                           :biff.fx/fx-input fx-input
+                           :biff.fx/fx-output fx-output}))
+                      results)
+        trace (conj trace
+                    {:biff.fx/state state
+                     :biff.fx/results results})
+        {:biff.fx/keys [state-output fx-output fx-input]} (apply merge-with merge results)]
+    {:next-state (:biff.fx/next state-output)
+     :ctx (merge ctx
+                 fx-output
+                 state-output
+                 {:biff.fx/trace trace
+                  :biff.fx/fx-input fx-input})
+     :trace trace
+     :state-output state-output}))
+
+(defn machine [machine-name & {:as state->transition-fn}]
   (fn run
     ([ctx state]
      ((or (get state->transition-fn state)
           (throw (ex-info (str "Invalid state: " state) {})))
       ctx))
-    ([{:biff.fx/keys [handlers] :as ctx}]
-     (loop [ctx ctx
+    ([ctx]
+     (loop [ctx   ctx
             state :start
             trace []]
-       (let [t-fn (or (get state->transition-fn state)
-                      (throw (ex-info (str "Invalid state: " state) {})))
-             result (t-fn ctx)
-             results (if (map? result)
-                       [result]
-                       result)
-             results (mapv (fn [m]
-                             (let [state-output (apply dissoc m (keys handlers))
-                                   fx-input     (select-keys m (keys handlers))
-                                   fx-output    (into {}
-                                                      (map (fn [[k v]]
-                                                             [k ((get handlers k)
-                                                                 ctx
-                                                                 v)]))
-                                                      fx-input)]
-                               {:biff.fx/state-output state-output
-                                :biff.fx/fx-input fx-input
-                                :biff.fx/fx-output fx-output}))
-                           results)
-             trace (conj trace
-                         {:biff.fx/state state
-                          :biff.fx/results results})
-             {:biff.fx/keys [state-output fx-output fx-input]} (apply merge-with merge results)
-             ctx (merge ctx
-                        fx-output
-                        state-output
-                        {:biff.fx/trace trace
-                         :biff.fx/fx-input fx-input})
-             next-state (:biff.fx/next state-output)]
+       (let [{:keys [next-state ctx trace state-output]}
+             (try
+               (step {:state->transition-fn state->transition-fn
+                      :ctx ctx
+                      :state state
+                      :trace trace})
+               (catch Exception e
+                 (throw (ex-info "Exception while running biff.fx machine"
+                                 {:machine machine-name
+                                  :state state
+                                  :trace (truncate trace)}
+                                 e))))]
          (if next-state
            (recur ctx next-state trace)
            state-output))))))
@@ -55,15 +88,16 @@
 
 (defn- autogen-endpoint [ns* sym]
   (let [href (str "/_biff/api/" ns* "/" sym)]
-    (assert (safe-for-url? (str sym)) (str "URL segment would contain invalid characters: " sym))
-    (assert (safe-for-url? (str ns*)) (str "URL segment would contain invalid characters: " ns*))
+    (doseq [segment [ns* sym]]
+      (assert (safe-for-url? (str segment))
+              (str "URL segment would contain invalid characters: " segment)))
     href))
 
 (let [all-methods [:get :post :put :delete :head :options :trace :patch :connect]]
-  (defn route* [uri & {:as state->transition-fn}]
-    (let [machine* (machine state->transition-fn)]
+  (defn route* [uri route-name & {:as state->transition-fn}]
+    (let [machine* (machine route-name state->transition-fn)]
       [uri
-       (into {}
+       (into {:name route-name}
              (comp (filter state->transition-fn)
                    (map (fn [method]
                           [method machine*])))
@@ -84,27 +118,33 @@
   (let [[uri & kvs] (if (string? (first args))
                       args
                       (into [nil] args))
-        uri (or uri (autogen-endpoint *ns* sym))]
-    `(let [params# (array-map ~@kvs)]
+        uri (or uri (autogen-endpoint *ns* sym))
+        route-name (keyword (str *ns*) (str sym))]
+    `(let [[& {:as params#}] [~@kvs]]
        (def ~sym
-         (route* ~uri (-> params#
-                          (update-vals wrap-hiccup)
-                          (merge {:start (fn [{:keys [~'request-method]}]
-                                           {:biff.fx/next ~'request-method})})))))))
+         (route* ~uri
+                 ~route-name
+                 (-> params#
+                     (update-vals wrap-hiccup)
+                     (merge {:start (fn [{:keys [~'request-method]}]
+                                      {:biff.fx/next ~'request-method})})))))))
 
 (defmacro defroute-pathom [sym & args]
   (let [[uri query & kvs] (if (string? (first args))
                             args
                             (into [nil] args))
-        uri (or uri (autogen-endpoint *ns* sym))]
+        uri (or uri (autogen-endpoint *ns* sym))
+        route-name (keyword (str *ns*) (str sym))]
     `(let [query# ~query
-           params# (array-map ~@kvs)]
+           [& {:as params#}] [~@kvs]]
        (def ~sym
-         (route* ~uri (-> params#
-                          (update-vals (comp wrap-hiccup wrap-pathom))
-                          (merge {:start (fn [{:keys [~'request-method]}]
-                                           {:biff.fx/pathom query#
-                                            :biff.fx/next ~'request-method})})))))))
+         (route* ~uri
+                 ~route-name
+                 (-> params#
+                     (update-vals (comp wrap-hiccup wrap-pathom))
+                     (merge {:start (fn [{:keys [~'request-method]}]
+                                      {:biff.fx/pathom query#
+                                       :biff.fx/next ~'request-method})})))))))
 
 (def handlers
   {:biff.fx/http (fn [_ctx request]
@@ -121,7 +161,7 @@
                      (let [{:keys [entity query]} (if (map? input)
                                                     input
                                                     {:query input})]
-                       (lib.pathom/process ctx (or entity {}) query)))
+                       (p.eql/process ctx (or entity {}) query)))
    :biff.fx/slurp (fn [_ctx file]
                     (slurp file))
    :biff.fx/queue (fn [ctx {:keys [id job wait-for-result]}]

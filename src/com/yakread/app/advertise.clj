@@ -3,11 +3,10 @@
    [clojure.data.generators :as gen]
    [clojure.string :as str]
    [com.biffweb :as biff]
-   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]
+   [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.pathom :refer [?]]
    [com.yakread.lib.pipeline :as lib.pipe]
    [com.yakread.lib.route :as lib.route :refer [defget defget-pipe defpost
                                                 defpost-pathom href]]

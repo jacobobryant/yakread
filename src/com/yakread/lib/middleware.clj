@@ -97,18 +97,14 @@
   (fn [{:keys [biff/secret headers] :as req}]
     (if (and (= (href routes/stripe-webhook) (:uri req))
              (secret :stripe/webhook-secret))
-      (try
-       (let [body-str (ring-req/body-string req)]
-         (Webhook/constructEvent body-str
-                                 (headers "stripe-signature")
-                                 (secret :stripe/webhook-secret))
-         (handler (assoc req
-                         :body (-> body-str
-                                   (.getBytes "UTF-8")
-                                   (java.io.ByteArrayInputStream.)))))
-       (catch Exception e
-         (log/error e "Error while handling stripe webhook event")
-         {:status 400 :body ""}))
+      (let [body-str (ring-req/body-string req)]
+        (Webhook/constructEvent body-str
+                                (headers "stripe-signature")
+                                (secret :stripe/webhook-secret))
+        (handler (assoc req
+                        :body (-> body-str
+                                  (.getBytes "UTF-8")
+                                  (java.io.ByteArrayInputStream.)))))
       (handler req))))
 
 (defn wrap-monitoring [handler]

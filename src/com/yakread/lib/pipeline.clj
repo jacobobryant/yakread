@@ -1,20 +1,19 @@
 (ns com.yakread.lib.pipeline
   (:refer-clojure :exclude [spit])
   (:require
-   [clojure.java.io :as io]
-   [clojure.java.shell :as shell]
    [cheshire.core :as cheshire]
    [clj-http.client :as http]
    [clojure.data.generators :as gen]
+   [clojure.java.io :as io]
+   [clojure.java.shell :as shell]
    [clojure.tools.logging :as log]
    [clojure.walk :as walk]
    [com.biffweb :as biff]
+   [com.wsscode.pathom3.interface.eql :as p.eql]
    [com.yakread.lib.datastar :as lib.d*]
    [com.yakread.lib.error :as lib.error]
-   [com.yakread.lib.pathom :as lib.pathom]
    [com.yakread.lib.s3 :as lib.s3]
-   [remus]
-   ;;[xtdb.api :as xt]
+   [remus] ;;[xtdb.api :as xt]
    [taoensso.tufte :refer [p]]))
 
 ;; TODO rename to :biff/now, :biff/seed
@@ -114,7 +113,7 @@
    :biff.pipe/pathom (fn [{:biff.pipe.pathom/keys [entity query] :as ctx}]
                        (assoc ctx
                               :biff.pipe.pathom/output
-                              (lib.pathom/process ctx (or entity {}) query)))
+                              (p.eql/process ctx (or entity {}) query)))
    :biff.pipe/slurp (fn [{:keys [biff.pipe.slurp/input] :as ctx}]
                       (assoc ctx :biff.pipe.slurp/output (slurp input)))
    :biff.pipe/render (fn [{:keys [biff/router biff.pipe.render/route-name] :as ctx}]

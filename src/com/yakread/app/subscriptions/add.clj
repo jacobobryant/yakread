@@ -3,7 +3,7 @@
    [com.biffweb :as biff]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.pathom :as lib.pathom :refer [?]]
+   [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.route :refer [defget defpost href redirect]]
    [com.yakread.lib.rss :as lib.rss]
    [com.yakread.lib.ui :as ui]

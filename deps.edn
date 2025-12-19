@@ -16,7 +16,7 @@
         vouch-opensource/fugato             {:git/url "https://github.com/vouch-opensource/fugato"
                                              :git/sha "4c1f687bca84f1f7777f347acdaafd49c182eae0"}
         com.stuartsierra/dependency         {:mvn/version "1.0.0"}
-        com.wsscode/pathom3                 {:mvn/version "2023.08.22-alpha"}
+        com.wsscode/pathom3                 {:mvn/version "2025.01.16-alpha"}
         camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}
         org.clojure/core.memoize            {:mvn/version "1.0.257"}
         org.clj-commons/claypoole           {:mvn/version "1.2.2"}

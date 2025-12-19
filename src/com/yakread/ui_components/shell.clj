@@ -21,7 +21,7 @@
     "/css/main.css"))
 
 (defresolver pages [{:keys [reitit.core/match]} {{:keys [user/roles]} :user/current}]
-  #::pco{:input [{(? :user/current) [:user/roles]}]}
+  #::pco{:input [{(? :user/current) [(? :user/roles)]}]}
   {:app.shell/pages
    (let [route-ns (-> match :data :name namespace)]
      (->> (cond-> [#:app.shell.page{:route-sym routes/for-you

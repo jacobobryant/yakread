@@ -7,7 +7,8 @@
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pathom :as lib.pathom]
    [edn-query-language.core :as eql]
-   [lambdaisland.uri :as uri]))
+   [lambdaisland.uri :as uri]
+   [com.wsscode.pathom3.interface.eql :as p.eql]))
 
 (def n-skipped (some-fn :item/n-skipped :item/n-skipped-with-digests))
 
@@ -552,9 +553,9 @@
                                         :item/rec-type
                                         :ad/click-cost]}]]
                    (pmap (fn [query]
-                           (lib.pathom/process
+                           (p.eql/process
                             (-> (apply dissoc ctx runtime-pathom-keys)
-                                (assoc ::lib.pathom/resolver-cache* cache))
+                                (assoc :com.wsscode.pathom3.connect.runner/resolver-cache* cache))
                             {:user/id id}
                             query)))
                    (apply merge))
@@ -619,7 +620,7 @@
                         #_[{:user/subscriptions [:sub/affinity-high :sub/title]}]
                         #_[{:user/discover-recs [:item/url]}])
 
-    (->> (lib.pathom/process (assoc-in ctx [:session :uid] user-id)
+    (->> (p.eql/process (assoc-in ctx [:session :uid] user-id)
                              {:user/id user-id}
                              #_[{:user/sub-recs [:item/title]}]
                              [{:user/subscriptions [:sub/affinity-low

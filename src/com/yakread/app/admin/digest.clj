@@ -1,6 +1,7 @@
 (ns com.yakread.app.admin.digest
   (:require
    [clojure.string :as str]
+   [com.wsscode.pathom3.interface.eql :as p.eql]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.pathom :as lib.pathom]))
 
@@ -22,7 +23,7 @@
                                         [:digest/text "text/plain"]
                                         [:digest/html "text/html"])
             ctx    (assoc ctx ::lib.pathom/resolver-cache resolver-cache)
-            result (lib.pathom/process ctx {} [{:session/user [output-key]}])
+            result (p.eql/process ctx {} [{:session/user [output-key]}])
             content   (get-in result [:session/user output-key])]
         {:status 200
          :headers {"content-type" content-type}

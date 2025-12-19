@@ -16,7 +16,8 @@
                          (ex-data ex)
                          (when-not (instance? clojure.lang.ExceptionInfo ex)
                            {:biff.error/ex-type (type ex)})
-                         data)))
+                         data))
+                 (ex-cause ex))
     (.setStackTrace (.getStackTrace ex))))
 
 (defmacro with-ex-data [data & body]
@@ -40,8 +41,3 @@
                    (when queue-id
                      {:biff/queue-id queue-id}))
             param-paths)))
-
-(defn wrap-request-ex-data [handler]
-  (fn [request]
-    (with-ex-data (request-ex-data request)
-      (handler request))))

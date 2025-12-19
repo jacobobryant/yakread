@@ -1,18 +1,14 @@
 (ns com.yakread.lib.spark
   (:require
-   [com.biffweb :refer [q]]
    [clojure.tools.logging :as log]
+   [com.biffweb :refer [q]]
    [com.wsscode.pathom3.connect.indexes :as pci]
-   [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver]]
-   [com.yakread.lib.ads :as lib.ads]
-   [com.yakread.lib.pathom :refer [? process]]
-   #_[xtdb.api :as xt :refer [q]])
+   [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
+   [com.wsscode.pathom3.interface.eql :as p.eql])
   (:import
-   [com.yakread AverageRating]
-   [java.time Instant Period]
+   [java.time Instant]
    [org.apache.spark.api.java JavaSparkContext]
-   [org.apache.spark.mllib.recommendation ALS Rating]
-   [scala.reflect ClassTag$]))
+   [org.apache.spark.mllib.recommendation ALS Rating]))
 
 (defn- median [xs]
   (first (take (/ (count xs) 2) xs)))
@@ -303,11 +299,11 @@
   (log/info "updating model")
   (merge {:yakread.model/item-candidate-ids #{}
           :yakread.model/get-candidates (constantly {})}
-         (process (merge ctx pathom-env {:biff/now (Instant/now)})
-                  {}
-                  [(? :yakread.model/item-candidate-ids)
-                   (? :yakread.model/get-candidates)
-                   {:yakread.model/all-liked-items [:item/id :item/n-likes]}])))
+         (p.eql/process (merge ctx pathom-env {:biff/now (Instant/now)})
+                        {}
+                        [(? :yakread.model/item-candidate-ids)
+                         (? :yakread.model/get-candidates)
+                         {:yakread.model/all-liked-items [:item/id :item/n-likes]}])))
 
 (defn use-spark [ctx]
   (let [spark (doto (JavaSparkContext. "local[*]" "yakread")
