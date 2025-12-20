@@ -115,6 +115,11 @@
    :item/any    [:or :item/feed :item/email :item/direct]
    :item        :item/any
 
+   :redirect (table
+               [:xt/id         :uuid]
+               [:redirect/url  ::string]
+               [:redirect/item :uuid])
+
    :feed (table
            [:xt/id                :uuid]
            [:feed/url             ::string]

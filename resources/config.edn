@@ -67,6 +67,8 @@
 
  :yakread.pipe.js/base-url #biff/env CLOUD_FN_BASE_URL
  :yakread.pipe.js/secret   #biff/secret CLOUD_FN_SECRET
+ :com.yakread.fx.js/base-url #biff/env CLOUD_FN_BASE_URL
+ :com.yakread.fx.js/secret   #biff/secret CLOUD_FN_SECRET
 
  :yakread.work.sync-all-feeds/enabled      #profile {:prod true :default false}
  :yakread.work.queue-add-candidate/enabled #profile {:prod true :default false}

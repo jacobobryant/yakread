@@ -1,19 +1,20 @@
 (ns com.yakread.util.biff-staging
   (:require
+   [aero.core :as aero]
    [buddy.core.mac :as mac]
+   [clojure.data.generators :as gen]
    [clojure.edn :as edn]
    [clojure.java.io :as io]
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.find :as ns-find]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
+   [com.wsscode.misc.coll :as wss-coll]
    [com.wsscode.pathom3.connect.operation :as pco]
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
    [malli.core :as malli]
-   [malli.registry :as malr]
-   ;;[xtdb.api :as xt]
-   [aero.core :as aero]
-   [com.wsscode.misc.coll :as wss-coll]))
+   [malli.registry :as malr] ;;[xtdb.api :as xt]
+))
 
 (defn doc-asts [{:keys [registry] :as malli-opts}]
   (for [schema-k (keys (malr/schemas (:registry malli-opts)))
@@ -138,3 +139,18 @@
 (defmethod aero/reader 'biff/edn
   [_ _ value]
   (edn/read-string value))
+
+(defn upsert [conn table on record]
+  (let [existing (first
+                  (biffx/q conn
+                           {:select :xt/id
+                            :from table
+                            :where (into [:and]
+                                         (map (fn [[k v]]
+                                                [:= k v]))
+                                         on)
+                            :limit 1}))
+        id (or (:xt/id existing) (gen/uuid))]
+    (cond-> [[:patch-docs :stuff (merge record on {:xt/id id})]]
+      (not existing)
+      (conj (biffx/assert-unique :stuff on)))))

@@ -1,0 +1,190 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [clojure.string :as str]
+  [com.yakread.lib.item :as lib.item :refer :all]],
+ :tests
+ [{:doc "add-item-machine* :post",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "url1", :item/doc-type :item/direct}
+       {:xt/id "item2",
+        :item/url "url2",
+        :item/doc-type :item/direct}],
+      :redirect
+      [{:xt/id "redirect1",
+        :redirect/url "url3",
+        :redirect/item "item2"}]}]
+    (let
+     [{:keys [post]}
+      (add-item-machine*
+       {:get-url :url,
+        :on-success
+        (fn
+         [ctx params]
+         {:on-success
+          {:ctx (dissoc ctx :biff/conn), :params params}})})
+      post*
+      (fn
+       [url]
+       (post
+        {:biff/base-url "https://example.com",
+         :biff/conn node,
+         :url url}))]
+     {:matching-url (post* "url1"),
+      :matching-redirect (post* "url3"),
+      :missing-url (post* "url4")})),
+   :result
+   {:matching-url
+    {:on-success
+     {:ctx {:biff/base-url "https://example.com", :url "url1"},
+      :params {:item/id "item1", :item/url "url1"}}},
+    :matching-redirect
+    {:on-success
+     {:ctx {:biff/base-url "https://example.com", :url "url3"},
+      :params {:item/id "item2", :item/url "url2"}}},
+    :missing-url
+    {:biff.fx/http
+     {:url "url4",
+      :method :get,
+      :headers {"User-Agent" "https://example.com"},
+      :socket-timeout 5000,
+      :connection-timeout 5000,
+      :throw-exceptions false},
+     :biff.fx/next :handle-http,
+     :com.yakread.lib.item/url "url4"}}}
+  _
+  {:doc "add-item-machine* :handle-http",
+   :eval
+   (let
+    [{:keys [handle-http]}
+     (add-item-machine*
+      {:on-error
+       (fn [ctx params] {:on-error {:ctx ctx, :params params}})})]
+    {:exception
+     (handle-http {:biff.fx/http {:url "url", :exception true}}),
+     :not-text
+     (handle-http
+      {:biff.fx/http
+       {:url "url", :headers {"Content-Type" "image/png"}}}),
+     :too-big
+     (->
+      (handle-http
+       {:biff.fx/http
+        {:url "url",
+         :headers {"Content-Type" "text/html"},
+         :body (str/join "" (repeat (* 1000 1000 2) "a"))}})
+      (update-in [:on-error :ctx :biff.fx/http :body] count)),
+     :success
+     (handle-http
+      {:biff.fx/http
+       {:url "url?foo=bar",
+        :headers {"Content-Type" "text/html"},
+        :body "hello"}}),
+     :success-with-redirect
+     (handle-http
+      {:biff.fx/http
+       {:url "url?foo=bar",
+        :headers {"Content-Type" "text/html"},
+        :trace-redirects ["url2" "url3" "url4"],
+        :body "hello"}})}),
+   :result
+   {:exception
+    {:on-error
+     {:ctx {:biff.fx/http {:url "url", :exception true}},
+      :params {:item/url "url"}}},
+    :not-text
+    {:on-error
+     {:ctx
+      {:biff.fx/http
+       {:url "url", :headers {"Content-Type" "image/png"}}},
+      :params {:item/url "url"}}},
+    :too-big
+    {:on-error
+     {:ctx
+      {:biff.fx/http
+       {:url "url",
+        :headers {"Content-Type" "text/html"},
+        :body 2000000}},
+      :params {:item/url "url"}}},
+    :success
+    {:com.yakread.fx/js
+     {:fn-name "readability",
+      :input {:url "url?foo=bar", :html "hello"}},
+     :biff.fx/next :handle-readability,
+     :com.yakread.lib.item/url "url?foo=bar",
+     :com.yakread.lib.item/final-url "url",
+     :com.yakread.lib.item/raw-html "hello"},
+    :success-with-redirect
+    {:com.yakread.fx/js
+     {:fn-name "readability",
+      :input {:url "url?foo=bar", :html "hello"}},
+     :biff.fx/next :handle-readability,
+     :com.yakread.lib.item/url "url?foo=bar",
+     :com.yakread.lib.item/final-url "url4",
+     :com.yakread.lib.item/raw-html "hello"}}}
+  _
+  {:doc "add-item-machine* :handle-readability",
+   :eval
+   (let
+    [{:keys [handle-readability]}
+     (add-item-machine*
+      {:on-error
+       (fn [ctx params] {:on-error {:ctx ctx, :params params}}),
+       :on-success
+       (fn
+        [ctx params]
+        {:on-success {:ctx ctx, :params params},
+         :biff.fx/tx [[:put-docs :stuff {:xt/id "stuff1"}]]})})]
+    {:error (handle-readability {:com.yakread.lib.item/url "url"}),
+     :success
+     (t/truncate
+      (handle-readability
+       {:com.yakread.lib.item/url "url",
+        :com.yakread.lib.item/raw-html
+        (str
+         "<html><head>"
+         "<meta content=\"https://example.com/some-image.png\" property=\"og:image\">"
+         "</head><body>hello</body></html>"),
+        :com.yakread.fx/js
+        {:content (apply str (repeat 201 "hello"))}}))}),
+   :result
+   {:error
+    {:on-error
+     {:ctx {:com.yakread.lib.item/url "url"},
+      :params {:item/url "url"}}},
+    :success
+    [{:biff.fx/s3
+      {:config-ns yakread.s3.content,
+       :method "PUT",
+       :key "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+       :body "<html>\n <head></head>\n <body>\n  hellohellohellohe…",
+       :headers {"x-amz-acl" "private", "content-type" "text/html"}}}
+     {:biff.fx/tx
+      [[:put-docs
+        :item
+        {:item/image-url "https://example.com/some-image.png",
+         :item/content-key
+         #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+         :item/lang "nl",
+         :xt/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"}]
+       [:put-docs
+        :redirect
+        {:xt/id #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b",
+         :redirect/url "url",
+         :redirect/item #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"}]
+       [:put-docs :stuff {:xt/id "stuff1"}]],
+      :on-success
+      {:ctx
+       {:com.yakread.lib.item/url "url",
+        :com.yakread.lib.item/raw-html
+        "<html><head><meta content=\"https://example.com/so…",
+        :com.yakread.fx/js
+        {:content
+         "hellohellohellohellohellohellohellohellohellohell…"}},
+       :params
+       {:item/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
+        :item/url "url"}}}]}}
+  _]}

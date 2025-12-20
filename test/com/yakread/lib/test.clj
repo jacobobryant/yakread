@@ -1,5 +1,6 @@
 (ns com.yakread.lib.test
   (:require
+   [clojure.data.generators :as gen]
    [clojure.edn :as edn]
    [clojure.java.classpath :as cp]
    [clojure.java.io :as io]
@@ -7,6 +8,7 @@
    [clojure.string :as str]
    [clojure.test.check.generators :as tc-gen]
    [clojure.tools.logging :as log]
+   [clojure.walk :as walk]
    [com.biffweb :as biff]
    [com.stuartsierra.dependency :as dep]
    [com.yakread :as main]
@@ -19,6 +21,20 @@
    [xtdb.node :as xtn])
   (:import
    [java.time Instant]))
+
+(defn- truncate-str
+  "Truncates a string s to be at most n characters long, appending an ellipsis if any characters were removed."
+  [s n]
+  (if (<= (count s) n)
+    s
+    (str (subs s 0 (dec n)) "…")))
+
+(defn truncate [data]
+  (walk/postwalk (fn [data]
+                   (if (string? data)
+                     (truncate-str data 50)
+                     data))
+                 data))
 
 (defn start-test-node [table->records]
   (let [node (xtn/start-node {})]
@@ -80,7 +96,8 @@
   (let [[result tap-results]
         (tapped
          (try
-           {:result (eval (:eval example))}
+           {:result (binding [gen/*rnd* (java.util.Random. 0)]
+                      (walk/postwalk identity (eval (:eval example))))}
            (catch Exception e
              ;; Only show the part of the stack trace that come from the eval'd code.
              {:ex (truncate-ex e "com.yakread.lib.test$eval_STAR_")})))]

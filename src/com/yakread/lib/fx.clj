@@ -1,10 +1,12 @@
 (ns com.yakread.lib.fx
   (:require
+   [cheshire.core :as cheshire]
    [clj-http.client :as http]
    [clojure.walk :as walk]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
-   [com.wsscode.pathom3.interface.eql :as p.eql]))
+   [com.wsscode.pathom3.interface.eql :as p.eql]
+   [com.yakread.lib.s3 :as lib.s3]))
 
 (defn- truncate-str
   "Truncates a string s to be at most n characters long, appending an ellipsis if any characters were removed."
@@ -57,6 +59,7 @@
      :trace trace
      :state-output state-output}))
 
+;; TODO set and log gen/*rnd*
 (defn machine [machine-name & {:as state->transition-fn}]
   (fn run
     ([ctx state]
@@ -120,8 +123,8 @@
                       (into [nil] args))
         uri (or uri (autogen-endpoint *ns* sym))
         route-name (keyword (str *ns*) (str sym))]
-    `(let [[& {:as params#}] [~@kvs]]
-       (def ~sym
+    `(def ~sym
+       (let [[& {:as params#}] [~@kvs]]
          (route* ~uri
                  ~route-name
                  (-> params#
@@ -135,9 +138,9 @@
                             (into [nil] args))
         uri (or uri (autogen-endpoint *ns* sym))
         route-name (keyword (str *ns*) (str sym))]
-    `(let [query# ~query
-           [& {:as params#}] [~@kvs]]
-       (def ~sym
+    `(def ~sym
+       (let [query# ~query
+             [& {:as params#}] [~@kvs]]
          (route* ~uri
                  ~route-name
                  (-> params#
@@ -146,11 +149,42 @@
                                       {:biff.fx/pathom query#
                                        :biff.fx/next ~'request-method})})))))))
 
+(defn call-js [{:biff/keys [secret] :as ctx} params]
+  (let [{:keys [base-url fn-name input local]} (merge (biff/select-ns-as ctx 'com.yakread.fx.js nil)
+                                                      params)]
+    (if local
+      (-> (biff/sh
+           "node" "-e" "console.log(JSON.stringify(require('./main.js').main(JSON.parse(fs.readFileSync(0)))))"
+           :dir (str "cloud-fns/packages/yakread/" fn-name)
+           :in (cheshire/generate-string input))
+          (cheshire/parse-string true)
+          :body)
+      (-> (str base-url fn-name)
+          (http/post {:headers {"X-Require-Whisk-Auth" (secret :com.yakread.fx.js/secret)}
+                      :as :json
+                      :form-params input
+                      :socket-timeout 10000
+                      :connection-timeout 10000})
+          :body))))
+
+(comment
+  (for [local [true false]]
+    (call-js @com.yakread/system
+             {:fn-name "readability",
+              :input {:url "https://example.com?foo=bar", :html "hello"}
+              :local local})))
+
 (def handlers
   {:biff.fx/http (fn [_ctx request]
-                   (-> (http/request request)
-                       (assoc :url (:url request))
-                       (dissoc :http-client)))
+                   (try
+                     (-> (http/request request)
+                         (assoc :url (:url request))
+                         (dissoc :http-client))
+                     (catch Exception e
+                       (if (get request :throw-exceptions true)
+                         (throw e)
+                         {:url (:url request)
+                          :exception e}))))
    :biff.fx/email (fn [{:keys [biff/send-email] :as ctx} input]
                     ;; This can be used in cases where we want a generic email interface not tied
                     ;; to a particular provider. For sending digests we need mailersend-specific
@@ -172,7 +206,9 @@
                              id
                              job)
                       wait-for-result deref))
-   
+   :biff.fx/s3 lib.s3/request
+   :com.yakread.fx/js call-js
+
    ;; TODO
    ;;:biff.pipe/s3 (fn [{:keys [biff.pipe.s3/input] :as ctx}]
    ;;                (assoc ctx :biff.pipe.s3/output (lib.s3/request ctx input)))
