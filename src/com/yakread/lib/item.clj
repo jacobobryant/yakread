@@ -73,27 +73,29 @@
                                     "content-type" "text/html"}}})
           (merge-with into
                       {:biff.fx/tx
-                       [[:put-docs :item
-                         (lib.core/some-vals
-                          {:xt/id item-id
-                           :item/ingested-at now
-                           :item/title title
-                           :item/url final-url
-                           :item/content-key content-key
-                           :item/content (when inline-content content)
-                           :item/published-at (some-> published-time lib.content/parse-instant)
-                           :item/excerpt (some-> textContent lib.content/excerpt)
-                           :item/feed-url (-> (lib.rss/parse-urls* url raw-html) first :url)
-                           :item/lang (lib.content/lang raw-html)
-                           :item/site-name siteName
-                           :item/byline byline
-                           :item/length length
-                           :item/image-url image})]
-                        (when (not= url final-url)
-                          [:put-docs :redirect
-                           {:xt/id (gen/uuid)
-                            :redirect/url url
-                            :redirect/item item-id}])]}
+                       (filterv
+                        some?
+                        [[:put-docs :item
+                          (lib.core/some-vals
+                           {:xt/id item-id
+                            :item/ingested-at now
+                            :item/title title
+                            :item/url final-url
+                            :item/content-key content-key
+                            :item/content (when inline-content content)
+                            :item/published-at (some-> published-time lib.content/parse-instant)
+                            :item/excerpt (some-> textContent lib.content/excerpt)
+                            :item/feed-url (-> (lib.rss/parse-urls* url raw-html) first :url)
+                            :item/lang (lib.content/lang raw-html)
+                            :item/site-name siteName
+                            :item/byline byline
+                            :item/length length
+                            :item/image-url image})]
+                         (when (not= url final-url)
+                           [:put-docs :redirect
+                            {:xt/id (gen/uuid)
+                             :redirect/url url
+                             :redirect/item item-id}])])}
                       (on-success ctx {:item/id item-id :item/url url}))])))})
 
 (defn add-item-machine [{:keys [user-item-kvs redirect-to]}]
