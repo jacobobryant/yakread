@@ -1,12 +1,17 @@
 (ns com.yakread.app.subscriptions.add
   (:require
+   [clojure.data.generators :as gen]
    [com.biffweb :as biff]
-   [com.yakread.lib.content :as lib.content]
-   [com.yakread.lib.middleware :as lib.middle]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :refer [?]]
-   [com.yakread.lib.route :refer [defget defpost href redirect]]
+   [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.fx :as fx]
+   [com.yakread.lib.middleware :as lib.middle]
+   [com.yakread.lib.route :refer [defpost href redirect]]
    [com.yakread.lib.rss :as lib.rss]
    [com.yakread.lib.ui :as ui]
+   [com.yakread.lib.user :as lib.user]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.routes :as routes]))
 
 (let [response (fn [success username]
@@ -14,109 +19,141 @@
                   :headers {"location" (href `page-route (when-not success
                                                            {:error "username-unavailable"
                                                             :email-username username}))}})]
-  (defpost set-username
-    :start
-    (fn [{:keys [biff/db session params]}]
-      ;; TODO
-      #_(let [username (lib.user/normalize-email-username (:username params))]
+  (fx/defroute set-username
+    :post
+    (fn [{:keys [biff/conn session params]}]
+      (let [username (lib.user/normalize-email-username (:username params))]
         (cond
-          (:user/email-username (xt/entity db (:uid session)))
+          (not-empty (biffx/q conn {:select 1
+                                    :from :user
+                                    :where [:and
+                                            [:= :xt/id (:uid session)]
+                                            [:is-not :user/email-username nil]]}))
           (response true nil)
 
           (or (empty? username)
               ;; TODO
-              (biff/lookup-id db :user/email-username username)
-              (biff/lookup-id db :deleted-user/email-username-hash (lib.core/sha256 username)))
+              (not-empty
+               (biffx/q conn
+                        {:union
+                         [{:select 1
+                           :from :user
+                           :where [:= :user/email-username username]}
+                          {:select 1
+                           :from :deleted-user
+                           :where [:= :deleted-user/email-username-hash (lib.core/sha256 username)]}]})))
           (response false (:username params))
 
           :else
-          {:biff.pipe/next     [:biff.pipe/tx :end]
-           :biff.pipe.tx/input [{:db/doc-type :user
-                                 :db/op :update
-                                 :xt/id (:uid session)
-                                 :user/email-username [:db/unique username]}]
-           :biff.pipe/catch    :biff.pipe/tx
-           ::username          username})))
+          (merge (response true username)
+                 {:biff.fx/tx [[:patch-docs :user
+                                {:xt/id (:uid session)
+                                 :user/email-username username}]
+                               (biffx/assert-unique :user {:user/email-username username})]}))))))
 
-    :end
-    (fn [{:keys [biff.pipe/exception ::username]}]
-      (response (not exception) username))))
+(defn- subscribe-feeds-tx [{:keys [biff/conn biff/now session]} feed-urls]
+  (let [user-id (:uid session)
+        results (biffx/q conn
+                         {:select [[:feed._id :feed-id]
+                                   :feed/url
+                                   [:sub._id :sub-id]]
+                          :from :feed
+                          :left-join [:sub [:= :feed._id :sub.feed/feed]]
+                          :where [:and
+                                  [:in :feed/url feed-urls]
+                                  [:or
+                                   [:is :sub/user nil]
+                                   [:= :sub/user user-id]]]})
+        url->feed (into {} (map (juxt :feed/url :feed-id)) results)
+        existing-sub-feed-ids (into #{}
+                                    (comp (filter :sub-id)
+                                          (map :feed-id))
+                                    results)
+        new-feed-docs (for [url feed-urls
+                            :when (not (url->feed url))]
+                        {:xt/id (gen/uuid)
+                         :feed/url url})
+        url->feed (into url->feed
+                        (map (juxt :feed/url :xt/id))
+                        new-feed-docs)
+        new-sub-docs (for [feed (vals url->feed)
+                           :when (not (existing-sub-feed-ids feed))]
+                       {:xt/id (biffx/prefix-uuid user-id (gen/uuid))
+                        :sub/user user-id
+                        :sub/created-at now
+                        :sub.feed/feed feed})]
+    {:feed-ids (vals url->feed)
+     :tx (concat
+          (when (not-empty new-feed-docs)
+            [{:assert [:not-exists
+                       {:select [:inline 1]
+                        :from :feed
+                        :where [:in :feed/url (mapv :feed/url new-feed-docs)]
+                        :limit [:inline 1]}]}
+             (into [:put-docs :feed] new-feed-docs)])
+          (when (not-empty new-sub-docs)
+            [{:assert [:not-exists
+                       {:select [:inline 1]
+                        :from :sub
+                        :where [:and
+                                [:= :sub/user user-id]
+                                [:in :sub.feed/feed (mapv :sub.feed/feed new-sub-docs)]]
+                        :limit [:inline 1]}]}
+             (into [:put-docs :sub] new-sub-docs)]))}))
 
-(defn- subscribe-feeds-tx [db user-id feed-urls]
-  ;; TODO
-  #_(let [url->feed (into {} (q db
-                              '{:find [url feed]
-                                :in [[url ...]]
-                                :where [[feed :feed/url url]]}
-                              feed-urls))]
-    (for [url feed-urls
-          :let [feed-id (get url->feed url (gen/uuid))]
-          doc (concat [{:db/doc-type    :sub/feed
-                        :db.op/upsert   {:sub/user user-id
-                                         :sub.feed/feed feed-id}
-                        :sub/created-at [:db/default :db/now]}]
-                      (when-not (url->feed url)
-                        [{:db/doc-type :feed
-                          :db/op       :create
-                          :xt/id       feed-id
-                          :feed/url    [:db/unique url]}]))]
-      doc)))
+(defn- sync-rss-jobs [feed-ids priority]
+  {:jobs (for [id feed-ids]
+           [:work.subscription/sync-feed
+            {:feed/id id :biff/priority priority}])})
 
-(defn- sync-rss-jobs [tx priority]
-  (for [{:keys [feed/url xt/id]} tx
-        :when url]
-    {:biff.pipe/current :biff.pipe/queue
-     :biff.pipe.queue/id :work.subscription/sync-feed
-     :biff.pipe.queue/job {:feed/id id :biff/priority priority}}))
-
-(defpost add-rss
-  :start
+(fx/defroute add-rss
+  :post
   (fn [{:keys [biff/base-url] {:keys [url]} :params}]
-    {:biff.pipe/next       [:biff.pipe/http :add-urls]
-     :biff.pipe.http/input {:url     (lib.content/add-protocol url)
-                            :method  :get
-                            :headers {"User-Agent" base-url}}
-     :biff.pipe/catch      :biff.pipe/http})
+    {:biff.fx/http {:url     (lib.content/add-protocol url)
+                    :method  :get
+                    :headers {"User-Agent" base-url}
+                    :throw-exceptions false}
+     :biff.fx/next :add-urls})
 
   :add-urls
-  (fn [{:keys [biff/db session biff.pipe.http/output]}]
-    (let [feed-urls (some->> output
+  (fn [{:keys [biff.fx/http] :as ctx}]
+    (let [feed-urls (some->> http
                              lib.rss/parse-urls
                              (mapv :url)
                              (take 20)
-                             vec)
-          tx (subscribe-feeds-tx db (:uid session) feed-urls)]
+                             vec)]
       (if (empty? feed-urls)
-        (redirect `page-route {:error "invalid-rss-feed" :url (:url output)})
-        {:biff.pipe/next     (into [:biff.pipe/tx] (sync-rss-jobs tx 0))
-         :biff.pipe.tx/input tx
-         :biff.pipe.tx/retry :add-urls ; TODO implement
-         :status             303
-         :headers            {"Location" (href `page-route {:added-feeds (count feed-urls)})}}))))
+        (redirect `page-route {:error "invalid-rss-feed" :url (:url http)})
+        (let [{:keys [tx feed-ids]} (subscribe-feeds-tx ctx feed-urls)]
+          [{:biff.fx/tx tx}
+           {:biff.fx/queue (sync-rss-jobs feed-ids 0)
+            :status 303
+            :headers {"Location" (href `page-route {:added-feeds (count feed-urls)})}}])))))
 
-(defpost add-opml
-  :start
+
+(fx/defroute add-opml
+  :post
   (fn [{{{:keys [tempfile]} :opml} :params}]
-    {:biff.pipe/next        [:biff.pipe/slurp :end]
-     :biff.pipe.slurp/input tempfile})
+    {:biff.fx/slurp  tempfile
+     :biff.pipe/next :end})
 
   :end
-  (fn [{:keys [biff/db session biff.pipe.slurp/output]}]
-    (if-some [urls (not-empty (lib.rss/extract-opml-urls output))]
-      (let [tx (subscribe-feeds-tx db (:uid session) urls)]
-        {:biff.pipe/next     (into [:biff.pipe/tx] (sync-rss-jobs tx 5))
-         :biff.pipe.tx/input tx
-         :biff.pipe.tx/retry :end ; TODO implement
-         :status             303
-         :headers            {"Location" (href `page-route {:added-feeds (count urls)})}})
+  (fn [{:keys [biff.fx/slurp] :as ctx}]
+    (if-some [urls (not-empty (lib.rss/extract-opml-urls slurp))]
+      (let [{:keys [tx feed-ids]} (subscribe-feeds-tx ctx urls)]
+        [{:biff.fx/tx tx}
+         {:biff.fx/queue (sync-rss-jobs feed-ids 5)
+          :status        303
+          :headers       {"Location" (href `page-route {:added-feeds (count urls)})}}])
       (redirect `page-route {:error "invalid-opml-file"}))))
 
-(defget page-route "/subscriptions/add"
+(fx/defroute-pathom page-route "/subscriptions/add"
   [:app.shell/app-shell
    {(? :user/current) [:xt/id
                        (? :user/email-username)
                        (? :user/suggested-email-username)]}]
 
+  :get
   (fn [{:biff/keys [domain base-url] :keys [params] :as ctx}
        {:keys [app.shell/app-shell] user :user/current}]
     (app-shell

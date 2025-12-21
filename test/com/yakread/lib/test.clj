@@ -12,6 +12,7 @@
    [com.biffweb :as biff]
    [com.stuartsierra.dependency :as dep]
    [com.yakread :as main]
+   [com.yakread.lib.route :as lib.route]
    [com.yakread.util.biff-staging :as biffs]
    [malli.experimental.time.generator]
    [malli.generator :as malli.g]
@@ -45,6 +46,15 @@
 (defmacro with-node [[node-sym db-contents] & body]
   `(with-open [~node-sym (start-test-node ~db-contents)]
      ~@body))
+
+(defn test-route [route state {:keys [request-method db] :as ctx}]
+  (let [[_ {f (or request-method state)}] route]
+    ;; TODO use a var from this namespace maybe?
+    (binding [lib.route/*testing* true]
+      (if db
+        (with-node [node db]
+          (f (assoc ctx :biff/conn node) state))
+        (f ctx state)))))
 
 (defn- read-string* [s & [extra-readers]]
   (edn/read-string {:readers (merge time-literals/tags

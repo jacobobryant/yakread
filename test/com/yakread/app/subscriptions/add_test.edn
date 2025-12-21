@@ -1,0 +1,328 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.app.subscriptions.add :refer :all]],
+ :tests
+ [{:doc "set-username already has a username",
+   :eval
+   (t/test-route
+    set-username
+    :post
+    {:session {:uid "user1"},
+     :params {:username "123"},
+     :db {:user [{:xt/id "user1", :user/email-username "abc"}]}}),
+   :result
+   {:status 303, :headers {"location" ["/subscriptions/add" nil]}}}
+  _
+  {:doc "set-username invalid username",
+   :eval
+   (t/test-route
+    set-username
+    :post
+    {:db {}, :session {:uid 1}, :params {:username "admin"}}),
+   :result
+   {:status 303,
+    :headers
+    {"location"
+     ["/subscriptions/add"
+      {:error "username-unavailable", :email-username "admin"}]}}}
+  _
+  {:doc "set-username username taken",
+   :eval
+   (t/test-route
+    set-username
+    :post
+    {:db {:user [{:xt/id 2, :user/email-username "abc"}]},
+     :session {:uid 1},
+     :params {:username "abc"}}),
+   :result
+   {:status 303,
+    :headers
+    {"location"
+     ["/subscriptions/add"
+      {:error "username-unavailable", :email-username "abc"}]}}}
+  _
+  {:doc "set-username success",
+   :eval
+   (t/test-route
+    set-username
+    :post
+    {:db {}, :session {:uid 1}, :params {:username "abc"}}),
+   :result
+   {:status 303,
+    :headers {"location" ["/subscriptions/add" nil]},
+    :biff.fx/tx
+    [[:patch-docs :user {:xt/id 1, :user/email-username "abc"}]
+     ["ASSERT ? >= (SELECT COUNT(*) FROM user WHERE (\"user$email_username\" = ?))"
+      1
+      "abc"]]}}
+  _
+  {:doc "add-rss fix the url",
+   :eval
+   (t/test-route
+    add-rss
+    :post
+    {:params {:url "example.com"},
+     :biff/base-url "https://yakread.com"}),
+   :result
+   {:biff.fx/http
+    {:url "https://example.com",
+     :method :get,
+     :headers {"User-Agent" "https://yakread.com"},
+     :throw-exceptions false},
+    :biff.fx/next :add-urls}}
+  _
+  {:doc "add-rss invalid url",
+   :eval
+   (t/test-route
+    add-rss
+    :add-urls
+    {:request-method :post,
+     :params {:session {:uid 1}},
+     :db {},
+     :biff.fx/http
+     {:url "https://example.com",
+      :body "<html><body>hey</body></html>"}}),
+   :result
+   {:status 303,
+    :headers
+    {"Location"
+     ["/subscriptions/add"
+      {:error "invalid-rss-feed", :url "https://example.com"}]}}}
+  _
+  {:doc "add-rss auto-discovery",
+   :eval
+   (t/test-route
+    add-rss
+    :add-urls
+    {:request-method :post,
+     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+     :db {},
+     :biff/now (t/zdt 2000),
+     :biff.fx/http
+     {:url "https://obryant.dev",
+      :body
+      "<html><head><link href=\"/feed.xml\" title=\"Feed for Jacob O'Bryant\" type=\"application/atom+xml\" rel=\"alternate\" /></head><body>hey</body></html>"}}),
+   :result
+   [{:biff.fx/tx
+     ({:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :feed,
+         :where [:in :feed/url ["https://obryant.dev/feed.xml"]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :feed
+       {:xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+        :feed/url "https://obryant.dev/feed.xml"}]
+      {:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :sub,
+         :where
+         [:and
+          [:= :sub/user #uuid "12340000-0000-0000-0000-000000000000"]
+          [:in
+           :sub.feed/feed
+           [#uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"]]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :sub
+       {:xt/id #uuid "1234c9f6-4f1d-f03a-8ce9-70b71df42503",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"}])}
+    {:biff.fx/queue
+     {:jobs
+      ([:work.subscription/sync-feed
+        {:feed/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+         :biff/priority 0}])},
+     :status 303,
+     :headers {"Location" ["/subscriptions/add" {:added-feeds 1}]}}]}
+  _
+  {:doc "add-rss direct url",
+   :eval
+   (t/test-route
+    add-rss
+    :add-urls
+    {:request-method :post,
+     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+     :db {},
+     :biff/now (t/zdt 2000),
+     :biff.fx/http
+     {:url "https://obryant.dev/feed.xml",
+      :body
+      "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<feed xmlns=\"http://www.w3.org/2005/Atom\"><title>Jacob O'Bryant</title><id>https://obryant.dev/feed.xml</id><updated>2024-08-31T13:00:00.000Z</updated><link rel=\"self\" href=\"https://obryant.dev/feed.xml\" type=\"application/atom+xml\" /><link href=\"https://obryant.dev\" /><entry><title type=\"html\">Impressions on Sudbury Schooling</title><id>https://obryant.dev/p/impressions-sudbury/</id><updated>2024-08-31T13:00:00.000Z</updated><content type=\"html\">lorem ipsum dolor sit amet...</content><link href=\"https://obryant.dev/p/impressions-sudbury/\" /><author><name>Jacob O'Bryant</name><uri>https://obryant.dev</uri></author></entry></feed>"}}),
+   :result
+   [{:biff.fx/tx
+     ({:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :feed,
+         :where [:in :feed/url ["https://obryant.dev/feed.xml"]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :feed
+       {:xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+        :feed/url "https://obryant.dev/feed.xml"}]
+      {:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :sub,
+         :where
+         [:and
+          [:= :sub/user #uuid "12340000-0000-0000-0000-000000000000"]
+          [:in
+           :sub.feed/feed
+           [#uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"]]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :sub
+       {:xt/id #uuid "1234c9f6-4f1d-f03a-8ce9-70b71df42503",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"}])}
+    {:biff.fx/queue
+     {:jobs
+      ([:work.subscription/sync-feed
+        {:feed/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+         :biff/priority 0}])},
+     :status 303,
+     :headers {"Location" ["/subscriptions/add" {:added-feeds 1}]}}]}
+  _
+  {:doc "add-rss don't create feed doc if someone already subscribes",
+   :eval
+   (t/test-route
+    add-rss
+    :add-urls
+    {:request-method :post,
+     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+     :db
+     {:feed
+      [{:xt/id "feed1", :feed/url "https://obryant.dev/feed.xml"}]},
+     :biff/now (t/zdt 2000),
+     :biff.fx/http
+     {:url "https://obryant.dev",
+      :body
+      "<html><head><link href=\"/feed.xml\" title=\"Feed for Jacob O'Bryant\" type=\"application/atom+xml\" rel=\"alternate\" /></head><body>hey</body></html>"}}),
+   :result
+   [{:biff.fx/tx
+     ({:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :sub,
+         :where
+         [:and
+          [:= :sub/user #uuid "12340000-0000-0000-0000-000000000000"]
+          [:in :sub.feed/feed ["feed1"]]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :sub
+       {:xt/id #uuid "1234b45f-d4d9-5138-3d93-cb799b3970be",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed "feed1"}])}
+    {:biff.fx/queue
+     {:jobs
+      ([:work.subscription/sync-feed
+        {:feed/id "feed1", :biff/priority 0}])},
+     :status 303,
+     :headers {"Location" ["/subscriptions/add" {:added-feeds 1}]}}]}
+  _
+  {:doc "add-opml slurp the uploaded file",
+   :eval
+   (t/test-route
+    add-opml
+    :post
+    {:params {:opml {:tempfile "/tmp/some-file"}}}),
+   :result {:biff.fx/slurp "/tmp/some-file", :biff.pipe/next :end}}
+  _
+  {:doc "add-opml extract and save the opml urls",
+   :eval
+   (t/test-route
+    add-opml
+    :end
+    {:request-method :post,
+     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+     :db {},
+     :biff/now (t/zdt 2000),
+     :biff.fx/slurp
+     (slurp
+      "test/com/yakread/app/subscriptions/add_test/sample.opml")}),
+   :result
+   [{:biff.fx/tx
+     ({:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :feed,
+         :where
+         [:in
+          :feed/url
+          ["https://code.thheller.com/feed.xml"
+           "http://timothypratley.blogspot.com/feeds/posts/default"
+           "https://www.clojuriststogether.org/index.xml"]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :feed
+       {:xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+        :feed/url "https://code.thheller.com/feed.xml"}
+       {:xt/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
+        :feed/url
+        "http://timothypratley.blogspot.com/feeds/posts/default"}
+       {:xt/id #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b",
+        :feed/url "https://www.clojuriststogether.org/index.xml"}]
+      {:assert
+       [:not-exists
+        {:select [:inline 1],
+         :from :sub,
+         :where
+         [:and
+          [:= :sub/user #uuid "12340000-0000-0000-0000-000000000000"]
+          [:in
+           :sub.feed/feed
+           [#uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"
+            #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"
+            #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b"]]],
+         :limit [:inline 1]}]}
+      [:put-docs
+       :sub
+       {:xt/id #uuid "1234c222-9cef-e94d-fc1e-932efb9a0f58",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"}
+       {:xt/id #uuid "12341b08-05e8-b107-f0f5-b4f22d0cd0f1",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"}
+       {:xt/id #uuid "1234620f-501c-9270-20ff-67585e33a8f6",
+        :sub/user #uuid "12340000-0000-0000-0000-000000000000",
+        :sub/created-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :sub.feed/feed #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b"}])}
+    {:biff.fx/queue
+     {:jobs
+      ([:work.subscription/sync-feed
+        {:feed/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+         :biff/priority 5}]
+       [:work.subscription/sync-feed
+        {:feed/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
+         :biff/priority 5}]
+       [:work.subscription/sync-feed
+        {:feed/id #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b",
+         :biff/priority 5}])},
+     :status 303,
+     :headers {"Location" ["/subscriptions/add" {:added-feeds 3}]}}]}
+  _
+  {:doc "add-opml no urls found, show an error",
+   :eval
+   (t/test-route
+    add-opml
+    :end
+    {:request-method :post,
+     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+     :biff/now (t/zdt 2000),
+     :biff.fx/slurp ""}),
+   :result
+   {:status 303,
+    :headers
+    {"Location" ["/subscriptions/add" {:error "invalid-opml-file"}]}}}
+  _]}
