@@ -235,7 +235,7 @@
     add-opml
     :post
     {:params {:opml {:tempfile "/tmp/some-file"}}}),
-   :result {:biff.fx/slurp "/tmp/some-file", :biff.pipe/next :end}}
+   :result {:biff.fx/slurp "/tmp/some-file", :biff.fx/next :end}}
   _
   {:doc "add-opml extract and save the opml urls",
    :eval

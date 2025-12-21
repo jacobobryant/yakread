@@ -134,8 +134,8 @@
 (fx/defroute add-opml
   :post
   (fn [{{{:keys [tempfile]} :opml} :params}]
-    {:biff.fx/slurp  tempfile
-     :biff.pipe/next :end})
+    {:biff.fx/slurp tempfile
+     :biff.fx/next  :end})
 
   :end
   (fn [{:keys [biff.fx/slurp] :as ctx}]

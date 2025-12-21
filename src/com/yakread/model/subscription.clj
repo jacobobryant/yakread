@@ -23,8 +23,9 @@
   {:sub/title (str/replace from #"\s<.*>" "")})
 
 (defresolver feed-sub-title [{:keys [sub.feed/feed]}]
-  #::pco{:input [{:sub.feed/feed [:feed/title]}]}
-  {:sub/title (:feed/title feed)})
+  #::pco{:input [{:sub.feed/feed [(? :feed/title)
+                                  :feed/url]}]}
+  {:sub/title ((some-fn :feed/title :feed/url) feed)})
 
 (defresolver email-subtitle [{:keys [sub.email/latest-item]}]
   {::pco/input [{:sub.email/latest-item [:item.email/reply-to]}]}
@@ -90,12 +91,14 @@
                                :sub/total 0}))))
 
 (defresolver items-read [{:keys [biff/conn]} inputs]
-  {::pco/input [:sub/source-id :sub/doc-type :sub/user]
+  {::pco/input [:sub/source-id
+                :sub/doc-type
+                {:sub/user [:xt/id]}]
    ::pco/output [:sub/items-read]
    ::pco/batch? true}
   (let [results (biffx/q conn
                          {:union
-                          (for [[user-id inputs] (group-by :sub/user inputs)
+                          (for [[{user-id :xt/id} inputs] (group-by :sub/user inputs)
                                 [doc-type inputs] (group-by :sub/doc-type inputs)
                                 :let [source-ids (mapv :sub/source-id inputs)
                                       source-key (doc-type->source-key doc-type)]]
