@@ -1,24 +1,23 @@
 (ns com.yakread.app.favorites.add
   (:require
+   [com.wsscode.pathom3.connect.operation :refer [?]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.item :as lib.item]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.pathom :as lib.pathom :refer [?]]
-   [com.yakread.lib.route :refer [defget defpost href]]
+   [com.yakread.lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 
-(defpost add-item
-  (lib.item/add-item-pipeline
-   {:user-item-kvs {:user-item/favorited-at :db/now
-                    :user-item/disliked-at :db/dissoc
-                    :user-item/reported-at :db/dissoc
-                    :user-item/report-reason :db/dissoc
-                    :user-item/bookmarked-at :db/dissoc}
+(fx/defroute add-item
+  (lib.item/add-item-machine
+   {:user-item-key :user-item/favorited-at
     :redirect-to `page}))
 
-(defget page "/favorites/add"
+(fx/defroute-pathom page "/favorites/add"
   [:app.shell/app-shell
    {(? :session/user) [:user/id]}]
+
+  :get
   (fn [{:keys [params biff/base-url] :as ctx}
        {:keys [app.shell/app-shell session/user]}]
     (app-shell

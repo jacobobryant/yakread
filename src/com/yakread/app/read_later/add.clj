@@ -11,7 +11,7 @@
 
 (def add-item-async
   (comp (lib.pipe/make
-         (lib.item/add-item-pipeline
+         (lib.item/add-item-machine
           {:user-item-kvs {:user-item/bookmarked-at :db/now
                            :user-item/favorited-at :db/dissoc
                            :user-item/disliked-at :db/dissoc
@@ -23,7 +23,7 @@
               (assoc-in [:params :url] url)))))
 
 (defpost add-item
-  (lib.item/add-item-pipeline
+  (lib.item/add-item-machine
    {:user-item-kvs {:user-item/bookmarked-at :db/now
                     :user-item/favorited-at :db/dissoc
                     :user-item/disliked-at :db/dissoc

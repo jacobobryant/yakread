@@ -7,12 +7,13 @@
                              [(first args) (rest args)]
                              [{} args])
         map-schema (into [:map (merge {:closed true} options)] map-args)]
-    (if-some [prefix-key (:biff/prefixed-by options)]
+    (if-some [prefix-fn (:biff/prefixed-by options)]
       [:and
        map-schema
-       [:fn (fn [m]
-              (= (:xt/id m)
-                 (biffx/prefix-uuid (get m prefix-key) (:xt/id m))))]]
+       [:fn {:error/message ":xt/id should be prefixed properly"}
+        (fn [m]
+          (= (:xt/id m)
+             (biffx/prefix-uuid (prefix-fn m) (:xt/id m))))]]
       map-schema)))
 
 (defn inherit [base-schema & table-args]
@@ -109,7 +110,7 @@
                         [:item.email/maybe-confirmation    ?        :boolean])
    ;; Items fetched from a user-supplied URL (bookmarked or favorited)
    :item/direct (inherit :item/base
-                         {:biff/prefixed-by #uuid "00000000-0000-0000-0000-000000000000"}
+                         {:biff/prefixed-by (constantly "0000")}
                          [:item/doc-type [:= :item/direct]]
                          [:item.direct/candidate-status ? [:enum :ingest-failed :blocked :approved]])
    :item/any    [:or :item/feed :item/email :item/direct]

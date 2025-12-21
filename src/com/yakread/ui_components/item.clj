@@ -6,7 +6,8 @@
             [com.yakread.lib.ui :as ui]
             [com.wsscode.pathom3.connect.operation :as pco :refer [defresolver ?]]
             [com.yakread.routes :as routes]
-            [lambdaisland.uri :as uri])
+            [lambdaisland.uri :as uri]
+            [tick.core :as tick])
   (:import (java.time Instant ZoneOffset)
            (java.time.format DateTimeFormatter)))
 
@@ -48,14 +49,14 @@
              (some-> (or (:source/title source) author-name byline) str/trim not-empty))
            (when (= doc-type :item/direct)
              (some-> url uri/uri :host str/trim not-empty))
-           (let [offset ZoneOffset/UTC ; TODO get timezone for user
-                 odt (.atOffset (or published-at ingested-at) offset)
-                 same-year (= (.getYear odt)
-                              (.getYear (.atOffset (Instant/now) offset)))
-                 formatter (DateTimeFormatter/ofPattern (if same-year
-                                                          "d MMM"
-                                                          "d MMM yyyy"))]
-             (.format odt formatter))
+           (let [;; TODO get timezone for user
+                 zdt (or published-at ingested-at)
+                 same-year (= (tick/year zdt)
+                              (tick/year (tick/in (tick/instant) "UTC")))]
+             (tick/format (if same-year
+                            "d MMM"
+                            "d MMM yyyy")
+                          zdt))
            (when (and show-reading-time length)
              (ui/pluralize (reading-minutes length) "minute"))
            (when-some [label (case rec-type

@@ -38,9 +38,14 @@
                               fx-input     (select-keys m (keys handlers))
                               fx-output    (into {}
                                                  (map (fn [[k v]]
-                                                        [k ((get handlers k)
-                                                            ctx
-                                                            v)]))
+                                                        [k (try
+                                                             ((get handlers k) ctx v)
+                                                             (catch Exception e
+                                                               (throw (ex-info "Exception while running biff.fx effect"
+                                                                               (truncate
+                                                                                {:effect k
+                                                                                 :input v})
+                                                                               e))))]))
                                                  fx-input)]
                           {:biff.fx/state-output state-output
                            :biff.fx/fx-input fx-input

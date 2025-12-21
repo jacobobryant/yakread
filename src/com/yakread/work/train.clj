@@ -11,7 +11,7 @@
   (reset! model (lib.spark/new-model ctx)))
 
 (defpipe add-candidate!
-  (lib.item/add-item-pipeline*
+  (lib.item/add-item-machine*
    {:get-url    (comp :item/url :biff/job)
     :on-success (fn [_ctx item]
                   ;(log/info "Ingested candidate" (pr-str (:item/url item)))

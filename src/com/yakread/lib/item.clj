@@ -63,7 +63,7 @@
              content (lib.content/normalize content)
              inline-content (<= (count content) 1000)
              content-key (when-not inline-content (gen/uuid))
-             item-id (gen/uuid)]
+             item-id (biffx/prefix-uuid "0000" (gen/uuid))]
          [(when-not inline-content
             {:biff.fx/s3 {:config-ns 'yakread.s3.content
                           :method  "PUT"
@@ -78,6 +78,7 @@
                         [[:put-docs :item
                           (lib.core/some-vals
                            {:xt/id item-id
+                            :item/doc-type :item/direct
                             :item/ingested-at now
                             :item/title title
                             :item/url final-url
@@ -98,18 +99,25 @@
                              :redirect/item item-id}])])}
                       (on-success ctx {:item/id item-id :item/url url}))])))})
 
-(defn add-item-machine [{:keys [user-item-kvs redirect-to]}]
+(defn add-item-machine [{:keys [user-item-key redirect-to]}]
   (add-item-machine*
    {:get-url
     (comp :url :params)
 
     :on-success
-    (fn [{:keys [session biff/conn]} {:item/keys [id]}]
-      (merge {:biff.fx/tx (biffs/upsert conn
-                                        :user-item
-                                        {:user-item/user (:uid session)
-                                         :user-item/item id}
-                                        user-item-kvs)}
+    (fn [{:keys [session biff/conn biff/now]} {:item/keys [id]}]
+      (merge {:biff.fx/tx
+              (biffs/upsert conn
+                            :user-item
+                            {:user-item/user (:uid session)
+                             :user-item/item id}
+                            (merge {:xt/id (biffx/prefix-uuid (:uid session) (gen/uuid))
+                                    :user-item/favorited-at nil
+                                    :user-item/disliked-at nil
+                                    :user-item/bookmarked-at nil
+                                    :user-item/reported-at nil
+                                    :user-item/report-reason nil}
+                                   {user-item-key now}))}
              (some-> redirect-to (hx-redirect {:added true}))))
 
     :on-error

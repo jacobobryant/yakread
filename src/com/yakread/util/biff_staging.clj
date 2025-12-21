@@ -140,17 +140,20 @@
   [_ _ value]
   (edn/read-string value))
 
-(defn upsert [conn table on record]
-  (let [existing (first
-                  (biffx/q conn
-                           {:select :xt/id
-                            :from table
-                            :where (into [:and]
-                                         (map (fn [[k v]]
-                                                [:= k v]))
-                                         on)
-                            :limit 1}))
-        id (or (:xt/id existing) (gen/uuid))]
-    (cond-> [[:patch-docs :stuff (merge record on {:xt/id id})]]
-      (not existing)
-      (conj (biffx/assert-unique :stuff on)))))
+(defn upsert [conn table on new-record]
+  (let [[{existing-id :xt/id}] (biffx/q conn
+                                        {:select :xt/id
+                                         :from table
+                                         :where (into [:and]
+                                                      (map (fn [[k v]]
+                                                             [:= k v]))
+                                                      on)
+                                         :limit 1})]
+    (if existing-id
+      [{:update table
+        :set (dissoc new-record :xt/id)
+        :where [:= :xt/id existing-id]}]
+      [[:put-docs table (into {}
+                              (filter (comp some? val))
+                              (merge {:xt/id (gen/uuid)} new-record on))]
+       (biffx/assert-unique table on)])))

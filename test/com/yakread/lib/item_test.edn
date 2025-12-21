@@ -169,12 +169,13 @@
          :item/content-key
          #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
          :item/lang "nl",
-         :xt/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"}]
+         :item/doc-type :item/direct,
+         :xt/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}]
        [:put-docs
         :redirect
         {:xt/id #uuid "98f8ba3d-c812-a76d-554d-cd2b40b5f04b",
          :redirect/url "url",
-         :redirect/item #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503"}]
+         :redirect/item #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}]
        [:put-docs :stuff {:xt/id "stuff1"}]],
       :on-success
       {:ctx
@@ -185,6 +186,6 @@
         {:content
          "hellohellohellohellohellohellohellohellohellohell…"}},
        :params
-       {:item/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
+       {:item/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503",
         :item/url "url"}}}]}}
   _]}
