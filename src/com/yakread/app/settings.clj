@@ -6,7 +6,7 @@
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.form :as lib.form]
-   [com.yakread.lib.fx :as fx :refer [defroute defroute-pathom]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
@@ -28,7 +28,7 @@
 (declare page)
 (declare account-deleted)
 
-(defroute set-timezone
+(fx/defroute set-timezone
   :post
   (fn [{:keys [session biff.form/params]}]
     {:biff.fx/tx [[:patch-docs :user
@@ -36,7 +36,7 @@
                     :user/timezone* (:user/timezone* params)}]]
      :status 204}))
 
-(defroute save-settings
+(fx/defroute save-settings
   :post
   (fn [{:keys [session biff.form/params]}]
     {:biff.fx/tx [[:patch-docs :user
@@ -49,7 +49,7 @@
      :status 303
      :headers {"location" (href page)}}))
 
-(defroute stripe-webhook "/stripe/webhook"
+(fx/defroute stripe-webhook "/stripe/webhook"
   :post
   (fn [{:keys [body-params] :as ctx}]
     (log/info "received stripe event" (:type body-params))
@@ -93,7 +93,7 @@
                      :where [:= :xt/id user-id]}]
        :status 204})))
 
-(defroute manage-premium
+(fx/defroute manage-premium
   :post
   (fn [_]
     {:biff.fx/pathom [{:session/user [:user/customer-id]}]
@@ -117,7 +117,7 @@
     {:status 303
      :headers {"location" (get-in http [:body :url])}}))
 
-(defroute upgrade-premium
+(fx/defroute upgrade-premium
   :post
   (fn [_]
     {:biff.fx/queue [{:session/user [:user/premium
@@ -181,14 +181,14 @@
     {:status 303
      :headers {"location" (get-in http [:body :url])}}))
 
-(defroute export-data
+(fx/defroute export-data
   :post
   (fn [{:keys [session]}]
     {:biff.fx/queue {:id :work.account/export-user-data
                      :job {:user/id (:uid session)}}
      :status 204}))
 
-(defroute-pathom delete-account
+(fx/defroute-pathom delete-account
   [{:session/user [:xt/id
                    :user/email
                    :user/account-deletable
@@ -325,7 +325,7 @@
                     {:_ (str "on click call alert('" account-deletable-message "')")}))
         "Delete account")))})
 
-(defroute-pathom page "/settings"
+(fx/defroute-pathom page "/settings"
   [:app.shell/app-shell
    {(? :session/user) [:xt/id]}
    ::main-settings
@@ -356,7 +356,7 @@
   ["/unsubscribed"
    {:get (fn [_] (ui/plain-page {} "You have been unsubscribed."))}])
 
-(defroute click-unsubscribe-route "/unsubscribe/:ewt"
+(fx/defroute click-unsubscribe-route "/unsubscribe/:ewt"
   :get
   (fn [{:keys [uri]}]
     [:html
