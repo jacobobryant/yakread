@@ -218,6 +218,9 @@
                                job)
                         wait-for-result deref)))
    :biff.fx/s3 lib.s3/request
+   :biff.fx/call (fn [ctx sym]
+                   ((requiring-resolve sym) ctx))
+
    :com.yakread.fx/js call-js
 
    ;; TODO

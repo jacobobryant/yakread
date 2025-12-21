@@ -3,14 +3,14 @@
    [cheshire.core :as cheshire]
    [clojure.string :as str]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.pipeline :as lib.pipe]
-   [com.yakread.lib.route :as lib.route :refer [defget defpost-pathom href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]
    [xtdb.api :as-alias xt]))
 
-(defpost-pathom unsubscribe
+(fx/defroute-pathom unsubscribe
   [{:params/sub [:sub/id
                  :sub/doc-type
                  {(? :sub/latest-item)
@@ -18,76 +18,74 @@
                    (? :item.email/list-unsubscribe)
                    (? :item.email/list-unsubscribe-post)]}]}
    (? :params/redirect-url)]
-  (fn [_ {{:sub/keys [id doc-type latest-item] :as sub} :params/sub
+
+  :post
+  (fn [{:keys [biff/now]} {{:sub/keys [id doc-type latest-item] :as sub} :params/sub
           :keys [params/redirect-url]}]
     (let [base {:status 204
-                :headers {"HX-Location" (or redirect-url (href routes/subs-page))}
-                :biff.pipe/next [:biff.pipe/tx]
-                :biff.pipe.tx/retry false}]
+                :headers {"HX-Location" (or redirect-url (href routes/subs-page))}}]
       (case doc-type
         :sub/feed
         (merge base
-               {:biff.pipe.tx/input [[::xt/delete id]]})
+               {:biff.fx/tx [{:delete-from :sub :where [:= :xt/id id]}]})
 
         :sub/email
         (let [{:item.email/keys [list-unsubscribe list-unsubscribe-post]} latest-item
               url (second (re-find #"<(http[^>]+)>" (or list-unsubscribe "")))
               email (second (re-find #"<mailto:([^>]+)>" (or list-unsubscribe "")))]
-          (merge-with into
+          (merge-with merge
                       base
-                      {:biff.pipe.tx/input [{:db/doc-type :sub/email
-                                             :db/op :update
-                                             :xt/id id
-                                             :sub.email/unsubscribed-at :db/now}]}
+                      {:biff.fx/tx [[:patch-docs :sub
+                                     {:xt/id id
+                                      :sub.email/unsubscribed-at now}]]}
                       (cond
                         (and url (= (some-> list-unsubscribe-post str/lower-case)
                                     "list-unsubscribe=one-click"))
-                        {:biff.pipe/next [:biff.pipe/http]
-                         :biff.pipe.http/input {:url url :method :post}
-                         :biff.pipe/catch :biff.pipe/http}
+                        {:biff.fx/http {:url url :method :post :throw-exceptions false}}
 
                         email
-                        {:biff.pipe/next [:biff.pipe/email]
-                         :biff.pipe.email/input {:to email :subject "unsubscribe"}}
+                        {:biff.fx/email {:to email :subject "unsubscribe"}}
 
                         url
                         {:headers {"HX-Trigger" (cheshire/generate-string {:yak/open-new-tab url})}})))))))
 
-(defpost-pathom toggle-pin
+(fx/defroute-pathom toggle-pin
   [{:params/sub [:sub/id
                  :sub/doc-type
                  (? :sub/pinned-at)]}]
-  (fn [_ {{:sub/keys [id pinned-at doc-type]}
-          :params/sub}]
-    {:biff.pipe/next             [:biff.pipe/tx (lib.pipe/render `page-content-route)]
-     :biff.pipe.tx/input         [{:db/doc-type   doc-type
-                                   :db/op         :update
-                                   :xt/id         id
-                                   :sub/pinned-at (if pinned-at
-                                                    :db/dissoc
-                                                    :db/now)}]}))
 
-(defpost-pathom resubscribe
+  :post
+  (fn [{:keys [biff/now]} {{:sub/keys [id pinned-at doc-type]}
+          :params/sub}]
+    {:biff.fx/tx [{:update :sub
+                   :set {:sub/pinned-at (when-not pinned-at now)}
+                   :where [:= :xt/id id]}]
+     :biff.fx/call `page-content-route
+     :biff.fx/next :return})
+
+  :return
+  (fn [{:keys [biff.fx/call]} _]
+    call))
+
+(fx/defroute-pathom resubscribe
   [{:params.checked/subscriptions
     [:sub/id]}]
+
+  :post
   (fn [_ {:keys [params.checked/subscriptions]}]
-    {:biff.pipe/next [:biff.pipe/tx]
-     :biff.pipe.tx/input (for [{:sub/keys [id]} subscriptions]
-                           {:db/doc-type :sub/email
-                            :db/op :update
-                            :xt/id id
-                            :sub.email/unsubscribed-at :db/dissoc})
+    {:biff.fx/tx [{:update :sub
+                   :set {:sub.email/unsubscribed-at nil}
+                   :where [:in :xt/id (mapv :sub/id subscriptions)]}]
      :status 204
      :headers {"HX-Redirect" (href `unsubs-page)}}))
 
-(defresolver sub-card [{:sub/keys [id title unread published-at pinned-at]
+(defresolver sub-card [{:sub/keys [id title unread pinned-at]
                         :keys [sub.feed/feed sub.email/from]}]
   #::pco{:input [:sub/id
                  :sub/title
                  :sub/unread
                  {(? :sub.feed/feed) [:feed/url]}
                  (? :sub.email/from)
-                 (? :sub/published-at)
                  (? :sub/pinned-at)]}
   {:sub.view/card
    [:.relative
@@ -132,13 +130,15 @@
                         :btn-label "Add subscriptions"
                         :btn-href (href routes/add-sub-page)}))
 
-(defget unsubs-page "/subscriptions/unsubscribed"
+(fx/defroute-pathom unsubs-page "/subscriptions/unsubscribed"
   [:app.shell/app-shell
    {:session/user
     [{:user/unsubscribed
       [:sub/id
        :sub/title
        :sub.email/unsubscribed-at]}]}]
+
+  :get
   (fn [_ {:keys [app.shell/app-shell]
           {:user/keys [unsubscribed]} :session/user}]
     (app-shell
@@ -156,13 +156,15 @@
          (ui/checkbox {:name (str "subs[" id "]") :ui/label title}))
        (ui/button {:type "submit"} "Move to subscriptions")]))))
 
-(defget page-content-route "/subscriptions/content"
+(fx/defroute-pathom page-content-route "/subscriptions/content"
   [{:session/user
     [{:user/subscriptions [:sub/id
                            :sub.view/card
                            (? :sub/published-at)
                            (? :sub/pinned-at)]}
      {:user/unsubscribed [:sub/id]}]}]
+
+  :get
   (fn [{:keys [params]} {{:user/keys [subscriptions unsubscribed]} :session/user}]
     (let [{pinned-subs true unpinned-subs false} (group-by (comp some? :sub/pinned-at) subscriptions)
           show-tabs (every? not-empty [pinned-subs unpinned-subs])
@@ -205,8 +207,10 @@
                   (sort-by :sub/published-at #(compare %2 %1))
                   (mapv :sub.view/card))))])])))
 
-(defget page-route "/subscriptions"
+(fx/defroute-pathom page-route "/subscriptions"
   [:app.shell/app-shell (? :user/current)]
+
+  :get
   (fn [{:keys [params]} {:keys [app.shell/app-shell] user :user/current}]
     (app-shell
      {:wide true}
