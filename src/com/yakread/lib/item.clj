@@ -1,5 +1,6 @@
 (ns com.yakread.lib.item
   (:require
+   [clojure.set :as set]
    [clojure.data.generators :as gen]
    [clojure.string :as str]
    [com.biffweb.experimental :as biffx]
@@ -14,7 +15,7 @@
 (def published-at (some-fn :item/published-at :item/ingested-at))
 
 (defn add-item-machine* [{:keys [get-url on-error on-success]}]
-  {:post
+  {:start
    (fn [{:biff/keys [conn base-url] :as ctx}]
      (let [url (str/trim (get-url ctx))]
        (if-some [item (first
@@ -99,27 +100,29 @@
                              :redirect/item item-id}])])}
                       (on-success ctx {:item/id item-id :item/url url}))])))})
 
-(defn add-item-machine [{:keys [user-item-key redirect-to]}]
-  (add-item-machine*
-   {:get-url
-    (comp :url :params)
+(defn add-item-machine [{:keys [start user-item-key redirect-to]
+                         :or {start :start}}]
+  (-> (add-item-machine*
+       {:get-url
+        (comp :url :params)
 
-    :on-success
-    (fn [{:keys [session biff/conn biff/now]} {:item/keys [id]}]
-      (merge {:biff.fx/tx
-              (biffs/upsert conn
-                            :user-item
-                            {:user-item/user (:uid session)
-                             :user-item/item id}
-                            (merge {:xt/id (biffx/prefix-uuid (:uid session) (gen/uuid))
-                                    :user-item/favorited-at nil
-                                    :user-item/disliked-at nil
-                                    :user-item/bookmarked-at nil
-                                    :user-item/reported-at nil
-                                    :user-item/report-reason nil}
-                                   {user-item-key now}))}
-             (some-> redirect-to (hx-redirect {:added true}))))
+        :on-success
+        (fn [{:keys [session biff/conn biff/now]} {:item/keys [id]}]
+          (merge {:biff.fx/tx
+                  (biffs/upsert conn
+                                :user-item
+                                {:user-item/user (:uid session)
+                                 :user-item/item id}
+                                (merge {:xt/id (biffx/prefix-uuid (:uid session) (gen/uuid))
+                                        :user-item/favorited-at nil
+                                        :user-item/disliked-at nil
+                                        :user-item/bookmarked-at nil
+                                        :user-item/reported-at nil
+                                        :user-item/report-reason nil}
+                                       {user-item-key now}))}
+                 (some-> redirect-to (hx-redirect {:added true}))))
 
-    :on-error
-    (fn [_ _]
-      (some-> redirect-to (hx-redirect {:error true})))}))
+        :on-error
+        (fn [_ _]
+          (some-> redirect-to (hx-redirect {:error true})))})
+      (set/rename-keys {:start start})))

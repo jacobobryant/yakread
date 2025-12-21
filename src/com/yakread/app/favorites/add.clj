@@ -10,7 +10,8 @@
 
 (fx/defroute add-item
   (lib.item/add-item-machine
-   {:user-item-key :user-item/favorited-at
+   {:start :post
+    :user-item-key :user-item/favorited-at
     :redirect-to `page}))
 
 (fx/defroute-pathom page "/favorites/add"

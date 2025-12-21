@@ -4,7 +4,7 @@
   [clojure.string :as str]
   [com.yakread.lib.item :as lib.item :refer :all]],
  :tests
- [{:doc "add-item-machine* :post",
+ [{:doc "add-item-machine* :start",
    :eval
    (t/with-node
     [node
@@ -18,7 +18,7 @@
         :redirect/url "url3",
         :redirect/item "item2"}]}]
     (let
-     [{:keys [post]}
+     [{:keys [start]}
       (add-item-machine*
        {:get-url :url,
         :on-success
@@ -26,16 +26,16 @@
          [ctx params]
          {:on-success
           {:ctx (dissoc ctx :biff/conn), :params params}})})
-      post*
+      start*
       (fn
        [url]
-       (post
+       (start
         {:biff/base-url "https://example.com",
          :biff/conn node,
          :url url}))]
-     {:matching-url (post* "url1"),
-      :matching-redirect (post* "url3"),
-      :missing-url (post* "url4")})),
+     {:matching-url (start* "url1"),
+      :matching-redirect (start* "url3"),
+      :missing-url (start* "url4")})),
    :result
    {:matching-url
     {:on-success
@@ -168,7 +168,7 @@
         {:item/image-url "https://example.com/some-image.png",
          :item/content-key
          #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
-         :item/lang "nl",
+         :item/lang "fi",
          :item/doc-type :item/direct,
          :xt/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}]
        [:put-docs

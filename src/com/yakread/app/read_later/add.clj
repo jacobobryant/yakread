@@ -1,55 +1,49 @@
 (ns com.yakread.app.read-later.add
   (:require
    [clojure.string :as str]
+   [com.wsscode.pathom3.connect.operation :refer [?]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.item :as lib.item]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.wsscode.pathom3.connect.operation :refer [?]]
-   [com.yakread.lib.pipeline :as lib.pipe]
    [com.yakread.lib.route :refer [defget defpost href hx-redirect]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 
 (def add-item-async
-  (comp (lib.pipe/make
+  (comp (fx/machine
+         ::add-item-async
          (lib.item/add-item-machine
-          {:user-item-kvs {:user-item/bookmarked-at :db/now
-                           :user-item/favorited-at :db/dissoc
-                           :user-item/disliked-at :db/dissoc
-                           :user-item/reported-at :db/dissoc
-                           :user-item/report-reason :db/dissoc}}))
+          {:user-item-key :user-item/bookmarked-at}))
         (fn [{{:keys [user/id url]} :biff/job :as ctx}]
           (-> ctx
               (assoc-in [:session :uid] id)
               (assoc-in [:params :url] url)))))
 
-(defpost add-item
+(fx/defroute add-item
   (lib.item/add-item-machine
-   {:user-item-kvs {:user-item/bookmarked-at :db/now
-                    :user-item/favorited-at :db/dissoc
-                    :user-item/disliked-at :db/dissoc
-                    :user-item/reported-at :db/dissoc
-                    :user-item/report-reason :db/dissoc}
+   {:start :post
+    :user-item-key :user-item/bookmarked-at
     :redirect-to `page}))
 
-(defpost add-batch
-  :start
+(fx/defroute add-batch
+  :post
   (fn [{:keys [session] {:keys [batch]} :params}]
     (if-some [urls (->> (str/split (or batch "") #"\s+")
                         (filter #(str/starts-with? % "http"))
                         not-empty)]
       (merge (hx-redirect `page {:batch-added (count urls)})
-             {:biff.pipe/next (for [[i url] (map-indexed vector urls)]
-                                {:biff.pipe/current :biff.pipe/queue
-                                 :biff.pipe.queue/id ::add-item
-                                 :biff.pipe.queue/job {:user/id (:uid session)
-                                                       :url url
-                                                       :biff/priority i}})})
+             {:biff.fx/queue {:jobs (for [[i url] (map-indexed vector urls)]
+                                      [::add-item {:user/id (:uid session)
+                                                   :url url
+                                                   :biff/priority i}])}})
       (hx-redirect `page {:batch-error true}))))
 
-(defget page "/read-later/add"
+(fx/defroute-pathom page "/read-later/add"
   [:app.shell/app-shell
    {(? :session/user) [:user/id]}]
-  (fn [{:keys [biff/base-url params] :as ctx}
+
+  :get
+  (fn [{:keys [biff/base-url params]}
        {:keys [app.shell/app-shell session/user]}]
     (app-shell
      {:title "Add bookmarks"}

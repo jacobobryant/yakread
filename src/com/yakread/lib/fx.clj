@@ -66,6 +66,8 @@
 
 ;; TODO set and log gen/*rnd*
 (defn machine [machine-name & {:as state->transition-fn}]
+  (assert (contains? state->transition-fn :start)
+          "machine must have a :start state")
   (fn run
     ([ctx state]
      ((or (get state->transition-fn state)
@@ -203,14 +205,18 @@
                        (p.eql/process ctx (or entity {}) query)))
    :biff.fx/slurp (fn [_ctx file]
                     (slurp file))
-   :biff.fx/queue (fn [ctx {:keys [id job wait-for-result]}]
-                    (cond-> ((if wait-for-result
-                               biff/submit-job-for-result
-                               biff/submit-job)
-                             ctx
-                             id
-                             job)
-                      wait-for-result deref))
+   :biff.fx/queue (fn [ctx {:keys [id job jobs wait-for-result]}]
+                    (if jobs
+                      (mapv (fn [[id job]]
+                              (biff/submit-job ctx id job))
+                            jobs)
+                      (cond-> ((if wait-for-result
+                                 biff/submit-job-for-result
+                                 biff/submit-job)
+                               ctx
+                               id
+                               job)
+                        wait-for-result deref)))
    :biff.fx/s3 lib.s3/request
    :com.yakread.fx/js call-js
 
