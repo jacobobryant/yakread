@@ -110,7 +110,7 @@
                 :biff.fx/handlers fx/handlers
                 ;:biff/db (:biff/db snapshots)
                 ;:biff.index/snapshots snapshots
-                :biff/now (tick/zoned-date-time)
+                :biff/now (tick/in (tick/zoned-date-time) "UTC")
                 :com.yakread/sign-redirect (fn [url]
                                              {:redirect url
                                               :redirect-sig (biffs/signature (jwt-secret) url)})

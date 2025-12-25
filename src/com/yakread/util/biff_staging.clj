@@ -157,3 +157,62 @@
                               (filter (comp some? val))
                               (merge {:xt/id (gen/uuid)} new-record on))]
        (biffx/assert-unique table on)])))
+
+(defmulti biff-tx-op (fn [ctx op]
+                       (when (and (vector? op)
+                                  (qualified-keyword? (first op)))
+                         (first op))))
+
+(defmethod biff-tx-op :default
+  [_ op]
+  [op])
+
+(defmethod biff-tx-op :biff/assert-query
+  [_ [_ query results]]
+  [{:assert [:=
+             {:select [[[:nest_many query]]]}
+             {:select [[[:array (for [record results]
+                                  [:lift record])]]]}]}])
+
+(defmethod biff-tx-op :biff/upsert
+  [{:keys [biff/conn]} [_ table on & records]]
+  (let [query {:select (conj on :xt/id)
+               :from table
+               :where [:in
+                       [:array on]
+                       (for [record records]
+                         [:array (mapv record on)])]}
+        results (biffx/q conn query)
+        on-fn (apply juxt on)
+        on->id (into {} (map (juxt on-fn :xt/id)) results)
+        new-records (into []
+                          (keep (fn [record]
+                                  (when-not (contains? on->id (on-fn record))
+                                    (merge {:xt/id (gen/uuid)} record))))
+                          records)
+        existing-records (into []
+                               (keep (fn [record]
+                                       (when-some [id (on->id (on-fn record))]
+                                         (assoc record :xt/id id))))
+                               records)]
+    (vec (concat
+          [[:biff/assert-query query results]]
+
+          (when (not-empty new-records)
+            [(into [:put-docs table] new-records)])
+
+          (for [record existing-records]
+            {:update table
+             :set (apply dissoc record :xt/id on)
+             :where [:= :xt/id (:xt/id record)]})))))
+
+(defn resolve-tx-ops [ctx tx]
+  (into []
+        (mapcat (fn [tx-op]
+                  (let [expanded (biff-tx-op ctx tx-op)]
+                    (cond->> expanded
+                      (not= expanded [tx-op]) (resolve-tx-ops ctx)))))
+        tx))
+
+(defn submit-tx [ctx tx]
+  (biffx/submit-tx ctx (resolve-tx-ops ctx tx)))

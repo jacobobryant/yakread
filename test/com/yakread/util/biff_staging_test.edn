@@ -1,0 +1,75 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.biffweb.experimental :as biffx]
+  [com.yakread.util.biff-staging :refer :all]
+  [xtdb.api :as xt]],
+ :tests
+ [{:doc ":biff/assert-query expansion",
+   :eval
+   (biff-tx-op
+    {}
+    [:biff/assert-query
+     {:select :xt/id, :from :stuff}
+     [{:xt/id 1, :x 1}]]),
+   :result
+   [{:assert
+     [:=
+      {:select [[[:nest_many {:select :xt/id, :from :stuff}]]]}
+      {:select [[[:array ([:lift {:xt/id 1, :x 1}])]]]}]}]}
+  _
+  {:doc ":biff/assert-query execution",
+   :eval
+   (t/with-node
+    [node
+     {:stuff
+      [{:xt/id "stuff1", :x 1}
+       {:xt/id "stuff2", :x 2}
+       {:xt/id "stuff3", :x 3}]}]
+    (let
+     [query
+      {:select :*,
+       :from :stuff,
+       :where [:in :xt/id ["stuff1" "stuff2"]]}
+      results
+      (biffx/q node query)]
+     (t/submit-tx node [[:biff/assert-query query results]])
+     (t/submit-tx
+      node
+      [[:biff/assert-query query (conj results {:xt/id 4, :x 4})]])
+     (xt/q node "select _id, committed from xt.txs"))),
+   :result
+   [{:xt/id 2, :committed false}
+    {:xt/id 1, :committed true}
+    {:xt/id 0, :committed true}]}
+  _
+  {:doc ":biff/upsert expansion",
+   :eval
+   (t/with-node
+    [node {:stuff [{:xt/id "stuff1", :x 1, :y 1}]}]
+    (biff-tx-op
+     {:biff/conn node}
+     [:biff/upsert
+      :stuff
+      [:x :y]
+      {:xt/id "stuff1-new-id", :x 1, :y 1, :z 1}
+      {:xt/id "stuff2-new-id", :x 2, :y 2, :z 2}
+      {:x 3, :y 3, :z 3}])),
+   :result
+   [[:biff/assert-query
+     {:select [:x :y :xt/id],
+      :from :stuff,
+      :where
+      [:in
+       [:array [:x :y]]
+       ([:array [1 1]] [:array [2 2]] [:array [3 3]])]}
+     [{:x 1, :y 1, :xt/id "stuff1"}]]
+    [:put-docs
+     :stuff
+     {:xt/id "stuff2-new-id", :x 2, :y 2, :z 2}
+     {:xt/id #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
+      :x 3,
+      :y 3,
+      :z 3}]
+    {:update :stuff, :set {:z 1}, :where [:= :xt/id "stuff1"]}]}
+  _]}

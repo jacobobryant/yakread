@@ -10,6 +10,7 @@
    [clojure.tools.logging :as log]
    [clojure.walk :as walk]
    [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.stuartsierra.dependency :as dep]
    [com.yakread :as main]
    [com.yakread.lib.route :as lib.route]
@@ -22,6 +23,12 @@
    [xtdb.node :as xtn])
   (:import
    [java.time Instant]))
+
+(defn submit-tx [node tx]
+  (->> tx
+       (biffs/resolve-tx-ops {:biff/conn node})
+       (mapv biffx/format-query)
+       (xt/submit-tx node)))
 
 (defn- truncate-str
   "Truncates a string s to be at most n characters long, appending an ellipsis if any characters were removed."

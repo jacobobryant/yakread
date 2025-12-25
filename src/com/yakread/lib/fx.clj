@@ -5,6 +5,7 @@
    [clojure.walk :as walk]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
+   [com.yakread.util.biff-staging :as biffs]
    [com.wsscode.pathom3.interface.eql :as p.eql]
    [com.yakread.lib.s3 :as lib.s3]))
 
@@ -201,7 +202,7 @@
                     ;; to a particular provider. For sending digests we need mailersend-specific
                     ;; features, so we use :biff.pipe/http there instead.
                     (send-email ctx input))
-   :biff.fx/tx biffx/submit-tx
+   :biff.fx/tx biffs/submit-tx
    :biff.fx/pathom (fn [ctx input]
                      (let [{:keys [entity query]} (if (map? input)
                                                     input
