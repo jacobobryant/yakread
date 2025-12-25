@@ -96,27 +96,29 @@
                 {:sub/user [:xt/id]}]
    ::pco/output [:sub/items-read]
    ::pco/batch? true}
-  (let [results (biffx/q conn
-                         {:union
-                          (for [[{user-id :xt/id} inputs] (group-by :sub/user inputs)
-                                [doc-type inputs] (group-by :sub/doc-type inputs)
-                                :let [source-ids (mapv :sub/source-id inputs)
-                                      source-key (doc-type->source-key doc-type)]]
-                            {:select [[:user-item/user :sub/user]
-                                      [source-key :sub/source-id]
-                                      [[:count :user-item/item] :sub/items-read]]
-                             :from :user-item
-                             :join [:item [:= :item._id :user-item/item]]
-                             :where [:and
-                                     [:= :user-item/user user-id]
-                                     [:in source-key source-ids]
-                                     [:is-not [:coalesce
-                                               :user-item/viewed-at
-                                               :user-item/skipped-at
-                                               :user-item/favorited-at
-                                               :user-item/disliked-at
-                                               :user-item/reported-at]
-                                      nil]]})})]
+  (let [results (->> (biffx/q conn
+                              {:union
+                               (for [[{user-id :xt/id} inputs] (group-by :sub/user inputs)
+                                     [doc-type inputs] (group-by :sub/doc-type inputs)
+                                     :let [source-ids (mapv :sub/source-id inputs)
+                                           source-key (doc-type->source-key doc-type)]]
+                                 {:select [[:user-item/user :sub/user]
+                                           [source-key :sub/source-id]
+                                           [[:count :user-item/item] :sub/items-read]]
+                                  :from :user-item
+                                  :join [:item [:= :item._id :user-item/item]]
+                                  :where [:and
+                                          [:= :user-item/user user-id]
+                                          [:in source-key source-ids]
+                                          [:is-not [:coalesce
+                                                    :user-item/viewed-at
+                                                    :user-item/skipped-at
+                                                    :user-item/favorited-at
+                                                    :user-item/disliked-at
+                                                    :user-item/reported-at]
+                                           nil]]})})
+                     (mapv (fn [record]
+                             (update record :sub/user #(array-map :xt/id %)))))]
     (lib.core/restore-order inputs
                             (juxt :sub/user :sub/source-id)
                             results

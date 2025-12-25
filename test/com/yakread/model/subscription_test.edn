@@ -83,13 +83,17 @@
      {:biff/conn node}
      [{:sub/source-id "sub1",
        :sub/doc-type :sub/email,
-       :sub/user "user1"}
+       :sub/user {:xt/id "user1"}}
       {:sub/source-id "feed1",
        :sub/doc-type :sub/feed,
-       :sub/user "user1"}])),
+       :sub/user {:xt/id "user1"}}])),
    :result
-   [{:sub/user "user1", :sub/source-id "sub1", :sub/items-read 1}
-    {:sub/user "user1", :sub/source-id "feed1", :sub/items-read 0}]}
+   [{:sub/user {:xt/id "user1"},
+     :sub/source-id "sub1",
+     :sub/items-read 1}
+    {:sub/user {:xt/id "user1"},
+     :sub/source-id "feed1",
+     :sub/items-read 0}]}
   _
   {:doc "items-unread",
    :eval (items-unread {:sub/total 5, :sub/items-read 2}),
