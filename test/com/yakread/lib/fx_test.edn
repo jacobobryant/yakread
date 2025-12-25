@@ -3,11 +3,13 @@
   [clojure.data.generators :as gen]
   [com.yakread.lib.fx :as fx]],
  :tests
- [{:eval ((fx/machine :start (fn [_] {:hello "there"})) {}),
+ [{:eval
+   ((fx/machine :test-machine :start (fn [_] {:hello "there"})) {}),
    :result {:hello "there"}}
   _
   {:eval
    ((fx/machine
+     :test-machine
      :start
      (fn [_] {:biff.fx/next :next})
      :next
@@ -17,6 +19,7 @@
   _
   {:eval
    ((fx/machine
+     :test-machine
      :start
      (fn [_] {:my-effect "yo ho ho", :biff.fx/next :next})
      :next
@@ -26,6 +29,7 @@
    :result {:result "you said: yo ho ho"}}
   _
   {:eval
-   ((fx/machine :start (fn [_] {:hello "there"})) {:extra "stuff"}),
+   ((fx/machine :test-machine :start (fn [_] {:hello "there"}))
+    {:extra "stuff"}),
    :result {:hello "there"}}
   _]}
