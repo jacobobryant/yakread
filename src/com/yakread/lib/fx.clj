@@ -156,6 +156,10 @@
                                       {:biff.fx/pathom query#
                                        :biff.fx/next ~'request-method})})))))))
 
+(defmacro defmachine [sym & args]
+  (let [machine-name (keyword (str *ns*) (str sym))]
+    `(def ~sym (machine ~machine-name ~@args))))
+
 (defn call-js [{:biff/keys [secret] :as ctx} params]
   (let [{:keys [base-url fn-name input local]} (merge (biff/select-ns-as ctx 'com.yakread.fx.js nil)
                                                       params)]
@@ -217,7 +221,10 @@
                                id
                                job)
                         wait-for-result deref)))
-   :biff.fx/s3 lib.s3/request
+   :biff.fx/s3 (fn [ctx input]
+                 (if (map? input)
+                   (lib.s3/request ctx input)
+                   (mapv #(lib.s3/request ctx %) input)))
    :biff.fx/call (fn [ctx sym]
                    ((requiring-resolve sym) ctx))
 

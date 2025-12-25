@@ -1,54 +1,56 @@
 (ns com.yakread.work.subscription
   (:require
+   [clojure.edn :as edn]
    [clojure.string :as str]
+   [clojure.tools.logging :as log]
+   [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pipeline :as lib.pipe]))
+   [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.fx :as fx]
+   [tick.core :as tick]
+   [rum.core :as rum]
+   [clojure.data.generators :as gen])
+  (:import [org.jsoup Jsoup]))
 
 (def ^:private epoch (java.time.Instant/ofEpochMilli 0))
 
-(defn- active-users [db now]
-  ;; TODO
-  #_(let [t0 (.minusSeconds now (* 60 60 24 30 6))]
-    (reduce (fn [active where]
-              (into active (q db
-                              {:find 'user
-                               :in '[t0]
-                               :timeout 60000
-                               :where (into '[[(< t0 t)]] where)}
-                              t0)))
-            #{}
-            '[[[user :user/joined-at t]]
-              [[usit :user-item/user user]
-               [usit :user-item/viewed-at t]]
-              [[ad :ad/user user]
-               [ad :ad/updated-at t]]
-              [[click :ad.click/user user]
-               [click :ad.click/created-at t]]])))
+(defn active-user-ids [conn now]
+  (let [t0 (tick/<< now (tick/of-months 6))]
+    (->> (biffx/q conn
+                  {:union [{:select [[:xt/id :user/id]]
+                            :from :user
+                            :where [:< t0 :user/joined-at]}
+                           {:select [[:user-item/user :user/id]]
+                            :from :user-item
+                            :where [:< t0 :user-item/viewed-at]}
+                           {:select [[:ad/user :user/id]]
+                            :from :ad
+                            :where [:< t0 :ad/updated-at]}
+                           {:select [[:ad.click/user :user/id]]
+                            :from :ad-click
+                            :where [:< t0 :ad.click/created-at]}]})
+         (mapv :user/id))))
 
 ;; TODO modify sync waiting period based on :feed/failed-syncs
-(def sync-all-feeds!
-  (lib.pipe/make
-   :start
-   (fn [{:keys [biff/db biff/now yakread.work.sync-all-feeds/enabled biff/queues]}]
-     ;; TODO
-     #_(when (and enabled (= 0 (.size (:work.subscription/sync-feed queues))))
-       (let [users (active-users db now)
-             feed-ids (q db
-                         {:find 'feed
-                          :in '[t0 [user ...]]
-                          :timeout 999999
-                          :where ['[sub :sub/user user]
-                                  '[sub :sub.feed/feed feed]
-                                  '[feed :feed/url]
-                                  [(list 'get-attr 'feed :feed/synced-at epoch) '[synced-at ...]]
-                                  '[(< synced-at t0)]]}
-                         (.minusSeconds now (* 60 60 12))
-                         users)]
-         (log/info "Syncing" (count feed-ids) "feeds")
-         {:biff.pipe/next (for [id feed-ids]
-                            {:biff.pipe/current :biff.pipe/queue
-                             :biff.pipe.queue/id :work.subscription/sync-feed
-                             :biff.pipe.queue/job {:feed/id id}})})))))
+(fx/defmachine sync-all-feeds!
+  :start
+  (fn [{:keys [biff/conn biff/now yakread.work.sync-all-feeds/enabled biff/queues]}]
+    (when (and enabled (= 0 (.size (:work.subscription/sync-feed queues))))
+      (let [user-ids (active-user-ids conn now)
+            t0 (tick/<< now (tick/of-hours 12))
+            feeds (biffx/q conn
+                           {:select :feed._id
+                            :from :sub
+                            :join [:feed [:= :sub.feed/feed :feed._id]]
+                            :where [:and
+                                    [:in :sub/user user-ids]
+                                    [:or
+                                     [:is :feed/synced-at nil]
+                                     [:< :feed/synced-at t0]]]})]
+        (log/info "Syncing" (count feeds) "feeds")
+        {:biff.fx/queue {:jobs (for [{:keys [xt/id]} feeds]
+                                 [:work.subscription/sync-feed {:feed/id id}])}}))))
 
 (defn- entry->html [entry]
   (->> (concat (:contents entry) [(:description entry)])
@@ -59,48 +61,56 @@
        :value))
 
 ;; TODO update url for feeds that change their URL
-(def sync-feed!
-  (lib.pipe/make
-   :start
-   (fn [{:biff/keys [db base-url]
-         {:keys [feed/id]} :biff/job}]
-     ;; TODO
-     #_(let [{:feed/keys [url etag last-modified]} (xt/entity db id)]
-       {:biff.pipe/next             [:com.yakread.pipe/remus :end]
-        :biff.pipe/catch            :com.yakread.pipe/remus
-        :com.yakread.pipe.remus/url url
+(fx/defmachine sync-feed!
+  :start
+  (fn [{:biff/keys [conn base-url] {:keys [feed/id]} :biff/job}]
+    (let [[{:feed/keys [url etag last-modified failed-syncs]}]
+          (biffx/q conn {:select [:feed/url
+                                  :feed/etag
+                                  :feed/last-modified
+                                  :feed/failed-syncs]
+                         :from :feed
+                         :where [:= :xt/id id]})]
+      {:biff.fx/next :parse
+       :biff.fx/http {:method :get
+                      :url url
+                      :headers (into {}
+                                     (remove (comp nil? val))
+                                     {"User-Agent" base-url
+                                      "If-None-Match" etag
+                                      "If-Modified-Since" last-modified})
+                      :socket-timeout     5000
+                      :connection-timeout 5000
+                      :throw-exceptions false
+                      :as :stream}
+       :feed/failed-syncs failed-syncs}))
 
-        :com.yakread.pipe.remus/opts
-        {:headers            (into {}
-                                   (remove (comp nil? val))
-                                   {"User-Agent" base-url
-                                    "If-None-Match" etag
-                                    "If-Modified-Since" last-modified})
+  :parse
+  (fn [{:keys [biff/conn biff/job biff.fx/http biff/now feed/failed-syncs]}]
+    (let [{feed-id :feed/id}          job
+          {:keys [headers exception]} http
+          _ (prn http)
+          remus-output                (when-not exception
+                                        (biff/catchall (remus/parse-http-resp http)))
+          success                     (some? remus-output)
 
-         :socket-timeout     5000
-         :connection-timeout 5000}}))
+          {:keys [title description image entries]} remus-output
 
-   :end
-   (fn [{:keys [biff/db
-                biff.pipe/exception
-                com.yakread.pipe.remus/output]
-         {feed-id :feed/id} :biff/job}]
-     ;; TODO
-     #_(let [{:keys [title description image entries]} (:feed output)
-           {:keys [headers]} (:response output)
-           feed-doc (into {}
-                          (remove (comp nil? val))
-                          {:db/doc-type        :feed
-                           :db/op              :update
-                           :xt/id              feed-id
-                           :feed/synced-at     :db/now
-                           :feed/failed-syncs  (if exception [:db/add 1] :db/dissoc)
+          feed-title (some-> title (lib.content/truncate 100))
+          feed-tx [[:patch-docs :feed
+                    (into {}
+                          (filter (comp some? val))
+                          {:xt/id              feed-id
+                           :feed/synced-at     now
+                           :feed/failed-syncs  (if success 0 (inc (or failed-syncs 0)))
                            :feed/title         (some-> title (lib.content/truncate 100))
                            :feed/description   (some-> description (lib.content/truncate 300))
                            :feed/image-url     (if (string? image) image (:url image))
                            :feed/etag          (lib.core/pred-> (get headers "Etag") coll? first)
-                           :feed/last-modified (lib.core/pred-> (get headers "Last-Modified") coll? first)})
-           items    (for [entry (take 20 entries)
+                           :feed/last-modified (lib.core/pred-> (get headers "Last-Modified") coll? first)})]]
+
+          items    (doall
+                    (for [entry (take 20 entries)
                           :let [html (entry->html entry)
                                 text (or (:textContent entry)
                                          (some-> html (Jsoup/parse) (.text)))
@@ -116,19 +126,20 @@
                           :when (some? html)]
                       (into {}
                             (remove (comp nil? val))
-                            {:db/doc-type       :item/feed
+                            {:xt/id             (biffx/prefix-uuid feed-id (gen/uuid))
                              :item.feed/feed    feed-id
                              :item/title        title
                              :item/content-key  (when (< 1000 (count html))
                                                   (gen/uuid))
                              :item/content      html
-                             :item/ingested-at  :db/now
+                             :item/ingested-at  now
                              :item/lang         (lib.content/lang html)
                              :item/paywalled    (some-> text str/trim (str/ends-with? "Read more"))
                              :item/url          (some-> (:link entry) str/trim)
-                             :item/published-at (some-> (some entry [:published-date :updated-date]) (.toInstant))
+                             :item/published-at (some-> (some entry [:published-date :updated-date])
+                                                        (tick/in "UTC"))
                              :item/author-name  (or (-> entry :authors first :name)
-                                                    (:feed/title feed-doc))
+                                                    feed-title)
                              :item/author-url   (some-> entry :authors first :uri str/trim)
                              :item/excerpt      (lib.content/excerpt
                                                  (if use-text-for-title
@@ -140,42 +151,44 @@
                              :item/byline       (:byline entry)
                              :item/image-url    (some-> (:og/image entry) str/trim)
                              :item/site-name    (:siteName entry)
-                             :item.feed/guid    (:uri entry)}))
-           existing-titles (set (q db
-                                   '{:find title
-                                     :in [feed [title ...]]
-                                     :timeout 120000
-                                     :where [[item :item.feed/feed feed]
-                                             [item :item/title title]]}
-                                   feed-id
-                                   (keep :item/title items)))
-           existing-guids  (set (q db
-                                   '{:find guid
-                                     :in [feed [guid ...]]
-                                     :timeout 120000
-                                     :where [[item :item.feed/feed feed]
-                                             [item :item.feed/guid guid]]}
-                                   feed-id
-                                   (keep :item.feed/guid items)))
-           items (remove (fn [{:keys [item/title item.feed/guid]}]
-                           (or (existing-titles title) (existing-guids guid)))
-                         items)
-           s3-inputs (for [{:item/keys [content content-key]} items
+                             :item.feed/guid    (:uri entry)})))
+
+          titles   (not-empty (keep :item/title items))
+          guids    (not-empty (keep :item.feed/guid items))
+          existing (when (or titles guids)
+                     (biffx/q conn
+                              {:select [:item/title :item.feed/guid]
+                               :from :item
+                               :where [:and
+                                       [:= :item.feed/feed feed-id]
+                                       (concat [:or]
+                                               (when titles
+                                                 [[:in :item/title titles]])
+                                               (when guids
+                                                 [[:in :item.feed/guid guids]]))]}))
+          existing-titles (into #{} (keep :item/title) existing)
+          existing-guids  (into #{} (keep :item.feed/guid) existing)
+
+          items     (into []
+                          (remove (some-fn (comp existing-titles :item/title)
+                                           (comp existing-guids :item.feed/guid)))
+                          items)
+          s3-inputs (vec
+                     (for [{:item/keys [content content-key]} items
                            :when content-key]
-                       {:biff.pipe/current  :biff.pipe/s3
-                        :biff.pipe.s3/input {:config-ns 'yakread.s3.content
-                                             :method  "PUT"
-                                             :key     (str content-key)
-                                             :body    content
-                                             :headers {"x-amz-acl"    "private"
-                                                       "content-type" "text/html"}}})
-           items (mapv (fn [item]
-                         (cond-> item
-                           (:item/content-key item) (dissoc :item/content)))
-                       items)]
-       {:biff.pipe/next     (concat [(lib.pipe/tx [feed-doc])]
-                                    s3-inputs
-                                    [(lib.pipe/tx items)])}))))
+                       {:config-ns 'yakread.s3.content
+                        :method  "PUT"
+                        :key     (str content-key)
+                        :body    content
+                        :headers {"x-amz-acl"    "private"
+                                  "content-type" "text/html"}}))
+          items     (mapv (fn [item]
+                            (cond-> item
+                              (:item/content-key item) (dissoc :item/content)))
+                          items)]
+      [{:biff.fx/tx feed-tx}
+       {:biff.fx/s3 s3-inputs}
+       {:biff.fx/tx [(into [:put-docs :item] items)]}])))
 
 (def module
   {:tasks [{:task     #'sync-all-feeds!
