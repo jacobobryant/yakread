@@ -123,6 +123,37 @@
     (.write *out* (str "#biff/file " (pr-str (.getPath obj))))
     (clojure.pprint/simple-dispatch obj)))
 
+(defn pretty-spit [file x]
+  (pprint/with-pprint-dispatch pprint-dispatch
+    (spit file (with-out-str (biff/pprint x)))))
+
+(defn load-fixtures [test-filename sym->fixture-code]
+  (let [fixture-file (io/file (str/replace test-filename #"_test.edn$" "_fixtures.edn"))
+        existing-fixtures (when (.exists fixture-file)
+                            (read-string* (slurp fixture-file)))
+        new-fixtures (-> (apply dissoc sym->fixture-code (keys existing-fixtures))
+                         (update-vals eval))
+        fixtures (-> (merge existing-fixtures new-fixtures)
+                     (select-keys (keys sym->fixture-code))
+                     not-empty)]
+    (cond
+      (and (empty? fixtures) (.exists fixture-file))
+      (io/delete-file fixture-file)
+
+      (not= existing-fixtures fixtures)
+      (pretty-spit fixture-file fixtures))
+    fixtures))
+
+(let [limit 60000]
+  ;; string literals are apparently limited to 65535 bytes when compiling (eval'ing) code.
+  (defn break-up-strings [x]
+    (walk/postwalk
+     (fn [x]
+       (if (and (string? x) (< limit (count x)))
+         `(str ~@(mapv #(apply str %) (partition-all limit x)))
+         x))
+     x)))
+
 (defn run-examples! [& {:keys [ext]}]
   (doseq [f (find-resources (or ext "_test.edn"))
           :let [f-contents (read-string* (slurp f)
@@ -131,14 +162,17 @@
                 tests (binding [*ns* (create-ns ns-sym)]
                         (refer 'clojure.core)
                         (run! require (:require f-contents))
-                        (mapv eval* (remove #{'_} (:tests f-contents))))
+                        (doseq [[sym fixture] (load-fixtures f (:fixtures f-contents))]
+                          (eval `(def ~sym ~(break-up-strings fixture))))
+                        (->> (:tests f-contents)
+                             (remove #{'_} )
+                             (mapv eval*)))
                 _ (remove-ns ns-sym)
                 ;; Add some underscores for visual separation.
                 tests (vec (interleave tests (repeat '_)))]]
     (when (not= tests (:tests f-contents))
       (println "Updating tests in" f)
-      (pprint/with-pprint-dispatch pprint-dispatch
-        (spit f (with-out-str (biff/pprint (assoc f-contents :tests tests))))))))
+      (pretty-spit f (assoc f-contents :tests tests)))))
 
 (defn instant [year & [month & [day & [hour & [minute & [second*]]]]]]
   (Instant/parse (format "%04d-%02d-%02dT%02d:%02d:%02dZ"
