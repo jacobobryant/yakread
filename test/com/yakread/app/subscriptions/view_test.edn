@@ -1,0 +1,139 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.app.subscriptions.view :refer :all]
+  [ring.middleware.anti-forgery :as csrf]],
+ :fixtures {user-id #uuid "12345678-0000-0000-0000-000000000000"},
+ :tests
+ [{:doc "mark-read existing, unread",
+   :eval
+   (t/test-route
+    mark-read
+    :post
+    {:db
+     {:user-item
+      [{:xt/id "usit1",
+        :user-item/user user-id,
+        :user-item/item "item1"}]},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user {:xt/id user-id}, :params/item {:xt/id "item1"}}}),
+   :result
+   {:status 204,
+    :biff.fx/tx
+    [[:patch-docs
+      :user-item
+      {:xt/id #uuid "1234b45f-d4d9-5138-3d93-cb799b3970be",
+       :user-item/user #uuid "12345678-0000-0000-0000-000000000000",
+       :user-item/item "item1",
+       :user-item/viewed-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]]}}
+  _
+  {:doc "mark-read existing, read",
+   :eval
+   (t/test-route
+    mark-read
+    :post
+    {:db
+     {:user-item
+      [{:xt/id "usit1",
+        :user-item/user user-id,
+        :user-item/item "item1",
+        :user-item/viewed-at (t/zdt 1999)}]},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user {:xt/id user-id}, :params/item {:xt/id "item1"}}}),
+   :result {:status 204}}
+  _
+  {:doc "mark-read new",
+   :eval
+   (t/test-route
+    mark-read
+    :post
+    {:db {},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user {:xt/id user-id}, :params/item {:xt/id "item1"}}}),
+   :result
+   {:status 204,
+    :biff.fx/tx
+    [[:patch-docs
+      :user-item
+      {:xt/id #uuid "1234b45f-d4d9-5138-3d93-cb799b3970be",
+       :user-item/user #uuid "12345678-0000-0000-0000-000000000000",
+       :user-item/item "item1",
+       :user-item/viewed-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]]}}
+  _
+  {:doc "mark-all-read",
+   :eval
+   (t/test-route
+    mark-all-read
+    :post
+    {:biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user {:xt/id user-id},
+      :params/sub
+      {:sub/id "sub1",
+       :sub/items
+       [{:item/id "item1", :item/unread true}
+        {:item/id "item2", :item/unread true}
+        {:item/id "item3", :item/unread false}]}}}),
+   :result
+   {:status 303,
+    :headers {"HX-Location" ["/subscription/sub1" nil]},
+    :biff.fx/tx
+    [[:biff/upsert
+      :user-item
+      [:user-item/user :user-item/item]
+      {:xt/id #uuid "1234b45f-d4d9-5138-3d93-cb799b3970be",
+       :user-item/user #uuid "12345678-0000-0000-0000-000000000000",
+       :user-item/item "item1",
+       :user-item/skipped-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}
+      {:xt/id #uuid "1234c9f6-4f1d-f03a-8ce9-70b71df42503",
+       :user-item/user #uuid "12345678-0000-0000-0000-000000000000",
+       :user-item/item "item2",
+       :user-item/skipped-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]]}}
+  _
+  {:doc "read-page-route missing item",
+   :eval
+   (t/test-route
+    read-page-route
+    :get
+    {:biff.fx/pathom {:session/user {}}}),
+   :result {:status 303, :headers {"Location" ["/subscriptions" nil]}}}
+  _
+  {:doc "read-page-route use-original-links",
+   :eval
+   (t/truncate
+    (binding
+     [csrf/*anti-forgery-token* "TOKEN"]
+     (t/test-route
+      read-page-route
+      :get
+      {:biff.fx/pathom
+       {:params/item {:item/id "item1", :item/url "url1"},
+        :session/user {:user/use-original-links true}}}))),
+   :result
+   {:body
+    [:html
+     [:body
+      [:div#params {:data-redirect-url "url1"}]
+      [:form
+       {:method "post",
+        :action
+        ["/_biff/api/com.yakread.app.subscriptions.view/mar…"
+         {:item/id "item1"}],
+        :style {:margin-bottom 0}}
+       ([:input
+         {:type "hidden",
+          :name "__anti-forgery-token",
+          :value "TOKEN"}])
+       nil]
+      [:script
+       {:dangerouslySetInnerHTML
+        {:__html
+         "params = document.querySelector('#params');const …"}}]]]}}
+  _]}
