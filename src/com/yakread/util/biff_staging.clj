@@ -169,10 +169,13 @@
 
 (defmethod biff-tx-op :biff/assert-query
   [_ [_ query results]]
-  [{:assert [:=
-             {:select [[[:nest_many query]]]}
-             {:select [[[:array (for [record results]
-                                  [:lift record])]]]}]}])
+  (if (empty? results)
+    ;; we need a special case because the second assert doesn't work when results are empty.
+    [{:assert [:not-exists query]}]
+    [{:assert [:=
+               {:select [[[:nest_many query]]]}
+               {:select [[[:array (for [record results]
+                                    [:lift record])]]]}]}]))
 
 (defmethod biff-tx-op :biff/upsert
   [{:keys [biff/conn]} [_ table on & records]]

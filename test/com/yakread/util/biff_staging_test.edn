@@ -18,6 +18,13 @@
       {:select [[[:nest_many {:select :xt/id, :from :stuff}]]]}
       {:select [[[:array ([:lift {:xt/id 1, :x 1}])]]]}]}]}
   _
+  {:doc ":biff/assert-query expansion empty results",
+   :eval
+   (biff-tx-op
+    {}
+    [:biff/assert-query {:select :xt/id, :from :stuff} []]),
+   :result [{:assert [:not-exists {:select :xt/id, :from :stuff}]}]}
+  _
   {:doc ":biff/assert-query execution",
    :eval
    (t/with-node
