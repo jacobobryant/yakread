@@ -9,9 +9,11 @@
    [clojure.tools.namespace.find :as ns-find]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
-   [com.wsscode.misc.coll :as wss-coll]
    [com.wsscode.pathom3.connect.operation :as pco]
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
+   [com.wsscode.pathom3.connect.runner :as-alias pcr]
+   [com.yakread.lib.core :as lib.core]
+   [com.wsscode.misc.coll :as wss-coll]
    [malli.core :as malli]
    [malli.registry :as malr] ;;[xtdb.api :as xt]
 ))
@@ -71,10 +73,13 @@
               joinify (fn [[k v]]
                         (if (ref? k)
                           [k {:xt/id v}]
-                          [k v]))]
-        :when (not (qualified-keyword? schema))]
-    (pco/resolver (symbol "com.yakread.util.biff-staging"
-                          (str (name schema) "-xtdb2-resolver"))
+                          [k v]))
+              joinify-map (fn [m]
+                            (into {} (map joinify) m))]
+        :when (not (qualified-keyword? schema))
+        :let [op-name (symbol "com.yakread.util.biff-staging"
+                              (str (name schema) "-xtdb2-resolver"))]]
+    (pco/resolver op-name
                   {::pco/input [:xt/id]
                    ::pco/output (vec (for [k (keys attrs)
                                            :when (not= k :xt/id)]
@@ -83,20 +88,48 @@
                                          k)))
                    ::pco/batch? true
                    ::pco/cache-key (fn [env input]
-                                     [::xtdb2-resolvers schema input (expects env)])}
-                  (fn [{:keys [biff/conn] :as env} inputs]
+                                     [op-name input (expects env)])}
+                  (fn [{:keys [biff/conn ::pcr/resolver-cache*] :as env} inputs]
                     ;; TODO
-                    ;; - see if the `columns` stuff causes any issues, e.g. do we need to mess with
-                    ;;   the cache key. e.g. can we break it with a self-reference that requests
-                    ;;   additional columns.
                     ;; - use a fixed db snapshot
-                    (let [columns (into [:xt/id] (filter attrs) (expects env))]
-                      (->> (biffx/q conn
-                                    {:select columns
-                                     :from schema
-                                     :where [:in :xt/id (mapv :xt/id inputs)]})
-                           (mapv #(into {} (map joinify) %))
-                           (wss-coll/restore-order inputs :xt/id)))))))
+                    (let [cache-value (some-> resolver-cache* deref)
+                          columns (filterv attrs (expects env))
+                          results (mapv (fn [{:keys [xt/id] :as input}]
+                                          (merge input
+                                                 (get-in cache-value [::cache schema id])))
+                                        inputs)
+                          missing-columns (into #{}
+                                                (mapcat (fn [entity]
+                                                          (into []
+                                                                (remove #(contains? entity %))
+                                                                columns)))
+                                                results)
+                          incomplete-inputs (filterv (fn [input]
+                                                       (some #(not (contains? input %))
+                                                             missing-columns))
+                                                     inputs)
+                          query-results (when (not-empty incomplete-inputs)
+                                          (biffx/q conn
+                                                   {:select (vec (conj missing-columns :xt/id))
+                                                    :from schema
+                                                    :where [:in :xt/id (mapv :xt/id incomplete-inputs)]}))
+                          nil-map (zipmap missing-columns (repeat nil))
+                          update-cache (fn [cache-value]
+                                         (reduce (fn [cache-value record]
+                                                   (update-in cache-value
+                                                              [::cache schema (:xt/id record)]
+                                                              #(merge nil-map % record)))
+                                                 cache-value
+                                                 query-results))
+                          cache-value (if resolver-cache*
+                                        (swap! resolver-cache* update-cache)
+                                        (update-cache cache-value))]
+                      (mapv (fn [{:keys [xt/id]}]
+                              (-> (get-in cache-value [::cache schema id])
+                                  joinify-map
+                                  (assoc :xt/id id)
+                                  lib.core/some-vals))
+                            inputs))))))
 
 (defn- find-modules [search-dirs]
   (->> search-dirs
