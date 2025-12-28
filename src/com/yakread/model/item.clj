@@ -78,12 +78,14 @@
                  {(? :item.feed/feed) [:feed/image-url]}]
          :output [:item/image-url]
          :batch? true}
-  (let [url->image (into {}
+  (let [feed-urls (keep :item/feed-url items)
+        url->image (into {}
                          (map (juxt :feed/url :feed/image-url))
-                         (biffx/q conn
-                                  {:select [:feed/url :feed/image-url]
-                                   :from :feed
-                                   :where [:in :feed/url (keep :item/feed-url items)]}))]
+                         (when (not-empty feed-urls)
+                           (biffx/q conn
+                                    {:select [:feed/url :feed/image-url]
+                                     :from :feed
+                                     :where [:in :feed/url feed-urls]})))]
     (mapv (fn [{:keys [item.feed/feed item/feed-url]}]
             (if-some [image (or (:feed/image-url feed)
                                 (url->image feed-url))]

@@ -9,8 +9,6 @@
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 
- :user-item/user 
-
 (fx/defroute-pathom mark-read
   [{:session/user [:xt/id]}
    {:params/item [:xt/id]}]

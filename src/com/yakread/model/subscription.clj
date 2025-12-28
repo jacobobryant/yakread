@@ -1,6 +1,7 @@
 (ns com.yakread.model.subscription
   (:require
    [clojure.string :as str]
+   [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.core :as lib.core]
@@ -23,8 +24,8 @@
   {:sub/title (str/replace from #"\s<.*>" "")})
 
 (defresolver feed-sub-title [{:keys [sub.feed/feed]}]
-  #::pco{:input [{:sub.feed/feed [(? :feed/title)
-                                  :feed/url]}]}
+  {::pco/input [{:sub.feed/feed [(? :feed/title)
+                                 :feed/url]}]}
   {:sub/title ((some-fn :feed/title :feed/url) feed)})
 
 (defresolver email-subtitle [{:keys [sub.email/latest-item]}]
@@ -51,16 +52,18 @@
 
 (defresolver sub-info [{:keys [xt/id sub.feed/feed sub.email/from]}]
   #::pco{:input [:xt/id
-                 :sub/user
-                 (? :sub.feed/feed)
+                 {(? :sub.feed/feed) [:xt/id]}
                  (? :sub.email/from)]
          :output [:sub/id
                   :sub/source-id
                   :sub/doc-type]}
-  (if from
+  (cond
+    from
     {:sub/id id
      :sub/source-id id
      :sub/doc-type :sub/email}
+
+    feed
     {:sub/id id
      :sub/source-id (:xt/id feed)
      :sub/doc-type :sub/feed}))
@@ -205,7 +208,7 @@
                             results)))
 
 (defresolver from-params [{:keys [biff/conn session path-params params]} _]
-  #::pco{:output [{:params/sub [:xt/id :sub/user]}]}
+  {::pco/output [{:params/sub [:xt/id {:sub/user [:xt/id]}]}]}
   (let [sub-id (or (:sub/id params)
                    (lib.serialize/url->uuid (:sub-id path-params)))
         [sub] (when (some? sub-id)
@@ -214,20 +217,25 @@
                           :from :sub
                           :where [:= :xt/id sub-id]}))]
     (when (and sub (= (:uid session) (:sub/user sub)))
-      {:params/sub sub})))
+      {:params/sub (update sub :sub/user #(array-map :xt/id %))})))
 
 ;; TODO turn from-params into a batch resolver and delete this
 (defresolver params-checked [{:keys [biff/conn session params]} _]
   #::pco{:output [{:params.checked/subscriptions [:sub/id]}]}
   (let [sub-ids (mapv #(some-> % name parse-uuid) (keys (:subs params)))
-        subs* (biffx/q conn
-                       {:select [:xt/id :sub/user]
-                        :from :sub
-                        :where [:in :xt/id sub-ids]})]
+        subs* (when (not-empty sub-ids)
+                (biffx/q conn
+                         {:select [:xt/id :sub/user]
+                          :from :sub
+                          :where [:in :xt/id sub-ids]}))]
 
     (when (and (= (count sub-ids) (count subs*))
                (every? #(= (:uid session) (:sub/user %)) subs*))
-      {:params.checked/subscriptions subs*})))
+      {:params.checked/subscriptions
+       (mapv (fn [{:keys [xt/id sub/user]}]
+               {:sub/id id
+                :sub/user {:xt/id user}})
+             subs*)})))
 
 (defresolver unread-items [{:keys [biff/conn]} subscriptions]
   #::pco{:input [{:sub/user [:xt/id]}

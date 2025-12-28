@@ -2,6 +2,7 @@
   (:require
    [cheshire.core :as cheshire]
    [clojure.string :as str]
+   [com.biffweb :as biff]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
@@ -60,12 +61,14 @@
     {:biff.fx/tx [{:update :sub
                    :set {:sub/pinned-at (when-not pinned-at now)}
                    :where [:= :xt/id id]}]
-     :biff.fx/call `page-content-route
+     :biff.fx/render {:route-sym `page-content-route
+                      :request-method :get}
      :biff.fx/next :return})
 
   :return
-  (fn [{:keys [biff.fx/call]} _]
-    call))
+  (fn [{:keys [biff.fx/render]} _]
+    render))
+
 
 (fx/defroute-pathom resubscribe
   [{:params.checked/subscriptions

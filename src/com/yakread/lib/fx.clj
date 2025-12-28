@@ -226,8 +226,9 @@
                  (if (map? input)
                    (lib.s3/request ctx input)
                    (mapv #(lib.s3/request ctx %) input)))
-   :biff.fx/call (fn [ctx sym]
-                   ((requiring-resolve sym) ctx))
+   :biff.fx/render (fn [ctx {:keys [route-sym request-method] :as extra-ctx}]
+                     (let [[_ {handler request-method}] @(requiring-resolve route-sym)]
+                       (handler (merge ctx extra-ctx))))
 
    :com.yakread.fx/js call-js
 
