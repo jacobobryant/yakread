@@ -65,6 +65,8 @@
       keys
       vec))
 
+(= (type (atom {})) clojure.lang.Atom)
+
 (defn xtdb2-resolvers [malli-opts]
   ;; TODO maybe add reverse resolvers too
   (for [[schema attrs] (schema-info malli-opts)
@@ -92,7 +94,10 @@
                   (fn [{:keys [biff/conn ::pcr/resolver-cache*] :as env} inputs]
                     ;; TODO
                     ;; - use a fixed db snapshot
-                    (let [cache-value (some-> resolver-cache* deref)
+                    (let [resolver-cache* (when (or (volatile? resolver-cache*)
+                                                    (= clojure.lang.Atom (type resolver-cache*)))
+                                            resolver-cache*)
+                          cache-value (some-> resolver-cache* deref)
                           columns (filterv attrs (expects env))
                           results (mapv (fn [{:keys [xt/id] :as input}]
                                           (merge input
@@ -121,9 +126,15 @@
                                                               #(merge nil-map % record)))
                                                  cache-value
                                                  query-results))
-                          cache-value (if resolver-cache*
-                                        (swap! resolver-cache* update-cache)
-                                        (update-cache cache-value))]
+                          cache-value (cond
+                                        (not resolver-cache*)
+                                        (update-cache cache-value)
+
+                                        (volatile? resolver-cache*)
+                                        (vswap! resolver-cache* update-cache)
+
+                                        :else
+                                        (swap! resolver-cache* update-cache))]
                       (mapv (fn [{:keys [xt/id]}]
                               (-> (get-in cache-value [::cache schema id])
                                   joinify-map
