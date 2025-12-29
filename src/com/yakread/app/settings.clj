@@ -73,7 +73,7 @@
                                        :from :user
                                        :where [:= :user/customer-id customer]})]
       {:biff.fx/tx [{:update :user
-                     :set {:user/plan plan
+                     :set {:user/plan [:lift plan]
                            :user/cancel-at (when cancel_at
                                              (tick/in (tick/instant (* cancel_at 1000))
                                                       "UTC"))}
@@ -93,15 +93,13 @@
                      :where [:= :xt/id user-id]}]
        :status 204})))
 
-(fx/defroute manage-premium
-  :post
-  (fn [_]
-    {:biff.fx/pathom [{:session/user [:user/customer-id]}]
-     :biff.fx/next :create-session})
+(fx/defroute-pathom manage-premium
+  [{:session/user [:user/customer-id]}]
 
-  :create-session
-  (fn [{:keys [biff/base-url biff/secret biff.fx/pathom]}]
-    (let [{:user/keys [customer-id]} (:session/user pathom)]
+  :post
+  (fn [{:keys [biff/base-url biff/secret biff.fx/pathom]}
+       {:keys [session/user]}]
+    (let [{:user/keys [customer-id]} user]
       {:biff.fx/http {:method :post
                       :url "https://api.stripe.com/v1/billing_portal/sessions"
                       :basic-auth [(secret :stripe/api-key)]
@@ -110,19 +108,19 @@
                       :as :json
                       :socket-timeout 10000
                       :connection-timeout 10000}
-       :biff.pipe/next :redirect}))
+       :biff.fx/next :redirect}))
 
   :redirect
-  (fn [{:keys [biff.fx/http]}]
+  (fn [{:keys [biff.fx/http]} _]
     {:status 303
      :headers {"location" (get-in http [:body :url])}}))
 
 (fx/defroute upgrade-premium
   :post
   (fn [_]
-    {:biff.fx/queue [{:session/user [:user/premium
-                                     :user/email
-                                     (? :user/customer-id)]}]
+    {:biff.fx/pathom [{:session/user [:user/premium
+                                      :user/email
+                                      (? :user/customer-id)]}]
      :biff.fx/next :check-customer-id})
 
   :check-customer-id
@@ -259,7 +257,9 @@
 
 (defresolver premium [{:keys [session/user]}]
   {::pco/input [{(? :session/user) [(? :user/plan)
-                                    (? :user/cancel-at)]}]}
+                                    (? :user/cancel-at)
+                                    :user/premium
+                                    :user/timezone]}]}
   {::premium
    (let [{:user/keys [premium plan cancel-at timezone]} user]
      (ui/section
@@ -270,8 +270,7 @@
           [:div
            (if cancel-at
              [:<> "You're on the premium plan until "
-              (.format (.atZone cancel-at timezone)
-                       (DateTimeFormatter/ofPattern "d MMMM yyyy"))
+              (tick/format "d MMMM yyyy" (tick/in cancel-at timezone))
               ". After that, you'll be downgraded to the free plan. "]
              [:<>
               "You're on the "

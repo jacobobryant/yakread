@@ -5,6 +5,7 @@
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.pipeline :as pipe :refer [defpipe]]
+   [tick.core :as tick]
    [xtdb.api :as-alias xt]))
 
 (defpipe export-user-data
@@ -30,8 +31,8 @@
     (let [{:user/keys [id email timezone]
            :user.export/keys [feed-subs bookmarks favorites]} output
           dir (io/file tmp-dir (str "yakread-export-"
-                                    (lib.core/fmt-inst now "yyyy-MM-dd" timezone)
-                                    "-" (inst-ms now) "-" id))
+                                    (tick/format "yyyy-MM-dd" (tick/in now timezone))
+                                    "-" (inst-ms (tick/instant now)) "-" id))
           zipfile (str dir ".zip")
           s3-key (.getName (io/file zipfile))]
       {:biff.pipe/next (concat
@@ -48,7 +49,7 @@
                          (pipe/delete-files zipfile)
                          (pipe/s3-presigned-url 'yakread.s3.export
                                                 s3-key
-                                                (.plusSeconds now (* 60 60 24 7)))
+                                                (tick/>> (tick/instant now) (tick/of-days 7)))
                          :send])
        ::email email}))
 
