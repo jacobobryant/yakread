@@ -154,22 +154,27 @@
   (when-some [source (or sub feed)]
     {:item/source source}))
 
-(defresolver sub [{:keys [biff/conn session]} inputs]
-  {::pco/input [{(? :item.email/sub) [:xt/id]}
-                {(? :item.feed/feed) [:xt/id]}]
+(defresolver email-sub [{:keys [item.email/sub]}]
+  {::pco/input [{:item.email/sub [:xt/id]}]
    ::pco/output [{:item/sub [:xt/id]}]}
-  (let [feed->sub (into {}
+  {:item/sub sub})
+
+(defresolver feed-sub [{:keys [biff/conn session]} inputs]
+  {::pco/input [{:item.feed/feed [:xt/id]}]
+   ::pco/output [{:item/sub [:xt/id]}]
+   ::pco/batch? true}
+  (let [feed-ids (into [] (map (comp :xt/id :item.feed/feed)) inputs)
+        feed->sub (into {}
                         (map (juxt :sub.feed/feed :xt/id))
-                        (biffx/q conn
-                                 {:select [:xt/id :sub.feed/feed]
-                                  :from :sub
-                                  :where [:and
-                                          [:= :sub/user (:uid session)]
-                                          [:in :sub.feed/feed (keep (comp :xt/id :item.feed/feed) inputs)]]}))]
-    (mapv (fn [{:keys [item.email/sub item.feed/feed]}]
-            (if-some [sub (or (:xt/id sub) (get feed->sub (:xt/id feed)))]
-              {:item/sub {:xt/id sub}}
-              {}))
+                        (when (not-empty feed-ids)
+                          (biffx/q conn
+                                   {:select [:xt/id :sub.feed/feed]
+                                    :from :sub
+                                    :where [:and
+                                            [:= :sub/user (:uid session)]
+                                            [:in :sub.feed/feed feed-ids]]})))]
+    (mapv (fn [{:keys [item.feed/feed]}]
+            {:item/sub {:xt/id (get feed->sub (:xt/id feed))}})
           inputs)))
 
 (defresolver from-params-unsafe [{:keys [path-params params]} _]
@@ -188,7 +193,7 @@
   (when (or (= (:uid session) (get-in item-unsafe [:item/sub :sub/user :xt/id]))
             (not-empty (:item/user-item item-unsafe))
             (contains? item-candidate-ids (:xt/id item-unsafe)))
-    {:params/item item-unsafe}))
+    {:params/item {:xt/id (:xt/id item-unsafe)}}))
 
 (defresolver item-id [{:keys [xt/id item/ingested-at]}]
   {:item/id id})
@@ -289,7 +294,8 @@
                from-params-unsafe
                image-from-feed
                item-id
-               sub
+               email-sub
+               feed-sub
                unread
                user-item
                xt-id

@@ -8,7 +8,8 @@
    [com.yakread.lib.pathom :as lib.pathom]
    [edn-query-language.core :as eql]
    [lambdaisland.uri :as uri]
-   [com.wsscode.pathom3.interface.eql :as p.eql]))
+   [com.wsscode.pathom3.interface.eql :as p.eql]
+   [tick.core :as tick]))
 
 (def n-skipped (some-fn :item/n-skipped :item/n-skipped-with-digests))
 
@@ -172,7 +173,7 @@
 
 (defn rank-by-freshness [items]
   (->> items
-       (sort-by (juxt n-skipped (comp - inst-ms :item/ingested-at)))
+       (sort-by (juxt n-skipped (comp - inst-ms tick/instant :item/ingested-at)))
        (rerank 0.1)))
 
 (defresolver unread-subs [{:user/keys [subscriptions]}]
@@ -263,7 +264,7 @@
                ;; This shouldn't be necessary, but apparently there's a bug in the :sub/unread indexer or
                ;; something.
                :when (< 0 (count unread-items))
-               :let [most-recent (apply max-key (comp inst-ms :item/ingested-at) unread-items)
+               :let [most-recent (apply max-key (comp inst-ms tick/instant :item/ingested-at) unread-items)
                      item (if (= 0 (get most-recent n-skipped-key))
                             most-recent
                             (->> unread-items
@@ -432,7 +433,7 @@
                                  (gen/rand-nth candidates)
                                  (->> candidates
                                       take-rand
-                                      (sort-by (comp - inst-ms :candidate/last-liked))
+                                      (sort-by (comp - inst-ms tick/instant :candidate/last-liked))
                                       take-rand
                                       gen/shuffle
                                       (sort-by (fn [{n-skips n-skips-key

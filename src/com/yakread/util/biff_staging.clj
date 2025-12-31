@@ -65,11 +65,30 @@
       keys
       vec))
 
-(= (type (atom {})) clojure.lang.Atom)
+;; TODO see if we can infer this more intelligently
+(def schema-whitelist
+  #{:feed
+    :ad-credit
+    :bulk-send
+    :mv-sub
+    :user-item
+    :sub
+    :digest-item
+    :item
+    :mv-user
+    :digest
+    :reclist
+    :ad-click
+    :deleted-user
+    :redirect
+    :ad
+    :user
+    :skip})
 
 (defn xtdb2-resolvers [malli-opts]
   ;; TODO maybe add reverse resolvers too
   (for [[schema attrs] (schema-info malli-opts)
+        :when (contains? schema-whitelist schema)
         :let [ref? (fn [attr]
                      (boolean (get-in attrs [attr :properties :biff/ref])))
               joinify (fn [[k v]]
@@ -137,9 +156,9 @@
                                         (swap! resolver-cache* update-cache))]
                       (mapv (fn [{:keys [xt/id]}]
                               (-> (get-in cache-value [::cache schema id])
+                                  lib.core/some-vals
                                   joinify-map
-                                  (assoc :xt/id id)
-                                  lib.core/some-vals))
+                                  (assoc :xt/id id)))
                             inputs))))))
 
 (defn- find-modules [search-dirs]
