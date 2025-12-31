@@ -2,65 +2,63 @@
   (:require
    [clojure.string :as str]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.icons :as lib.icons]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.route :refer [defpost-pathom href]]
+   [com.yakread.lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 
-(defpost-pathom mark-unread
-  [{:session/user [:xt/id]}
-   {:params/item [:xt/id]}
+(fx/defroute-pathom mark-unread
+  [{:params/item [{:item/user-item [:xt/id]}]}
    :params/redirect-url]
-  (fn [_ {:keys [session/user params/item params/redirect-url]}]
+
+  :post
+  (fn [_ {:keys [params/item params/redirect-url]}]
     {:status 204
      :headers {"HX-Location" redirect-url}
-     :biff.pipe/next [:biff.pipe/tx]
-     :biff.pipe.tx/input [{:db/doc-type :user-item
-                           :db.op/upsert {:user-item/user (:xt/id user)
-                                          :user-item/item (:xt/id item)}
-                           :user-item/viewed-at :db/dissoc
-                           :user-item/favorited-at :db/dissoc
-                           :user-item/disliked-at :db/dissoc
-                           :user-item/reported-at :db/dissoc
-                           :user-item/report-reason :db/dissoc
-                           :user-item/skipped-at :db/dissoc}]}))
+     :biff.fx/tx [{:update :user-item
+                   :set {:user-item/viewed-at nil
+                         :user-item/favorited-at nil
+                         :user-item/disliked-at nil
+                         :user-item/reported-at nil
+                         :user-item/report-reason nil
+                         :user-item/skipped-at nil}
+                   :where [:= :xt/id (get-in item [:item/user-item :xt/id])]}]}))
 
-(defpost-pathom toggle-favorite
+(fx/defroute-pathom toggle-favorite
   [{:params/item
     [:item/like-button*
      {:item/user-item
       [:xt/id
        (? :user-item/favorited-at)]}]}]
-  (fn [_ {:keys [params/item]}]
+
+  :post
+  (fn [{:keys [biff/now]} {:keys [params/item]}]
     (let [user-item (:item/user-item item)
           favorited (boolean (:user-item/favorited-at user-item))]
       {:status 200
        :headers {"Content-Type" "text/html"}
        :body ((:item/like-button* item) {:active (not favorited)})
-       :biff.pipe/next [:biff.pipe/tx]
-       :biff.pipe.tx/retry false
-       :biff.pipe.tx/input [{:db/doc-type :user-item
-                             :db/op :update
-                             :xt/id (:xt/id user-item)
-                             :user-item/favorited-at (if favorited :db/dissoc :db/now)
-                             :user-item/disliked-at :db/dissoc
-                             :user-item/reported-at :db/dissoc
-                             :user-item/report-reason :db/dissoc}]})))
+       :biff.fx/tx [{:update :user-item
+                     :set {:user-item/favorited-at (when-not favorited now)
+                           :user-item/disliked-at nil
+                           :user-item/reported-at nil
+                           :user-item/report-reason nil}
+                     :where [:= :xt/id (:xt/id user-item)]}]})))
 
-(defpost-pathom not-interested
+(fx/defroute-pathom not-interested
   [{:params/item [{:item/user-item [:xt/id]}]}
    :params/redirect-url]
-  (fn [_ {:params/keys [item redirect-url]}]
+
+  :post
+  (fn [{:keys [biff/now]} {:params/keys [item redirect-url]}]
     {:status 204
      :headers {"HX-Location" redirect-url}
-     :biff.pipe/next [:biff.pipe/tx]
-     :biff.pipe.tx/retry false
-     :biff.pipe.tx/input [{:db/doc-type :user-item
-                           :db/op :update
-                           :xt/id (get-in item [:item/user-item :xt/id])
-                           :user-item/favorited-at :db/dissoc
-                           :user-item/disliked-at :db/now}]}))
+     :biff.fx/tx [{:update :user-item
+                   :set {:user-item/favorited-at nil
+                         :user-item/disliked-at now}
+                   :where [:= :xt/id (get-in item [:item/user-item :xt/id])]}]}))
 
 (defn bar-button-icon-label [icon text]
   [:.flex.justify-center
