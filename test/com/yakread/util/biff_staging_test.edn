@@ -79,4 +79,34 @@
       :y 3,
       :z 3}]
     {:update :stuff, :set {:z 1}, :where [:= :xt/id "stuff1"]}]}
+  _
+  {:doc ":biff/upsert :on-insert / :on-delete",
+   :eval
+   (t/with-node
+    [node {:stuff [{:xt/id "stuff1", :x 1, :y 1}]}]
+    (biff-tx-op
+     {:biff/conn node}
+     [:biff/upsert
+      :stuff
+      [:x :y]
+      {:xt/id "stuff1-new-id",
+       :x 1,
+       :y 1,
+       :biff/on-insert {:z 1},
+       :biff/on-update {:z [:+ :z 1]}}
+      {:xt/id "stuff2-new-id",
+       :x 2,
+       :y 2,
+       :biff/on-insert {:z 1},
+       :biff/on-update {:z [:+ :z 1]}}])),
+   :result
+   [[:biff/assert-query
+     {:select [:x :y :xt/id],
+      :from :stuff,
+      :where [:in [:array [:x :y]] ([:array [1 1]] [:array [2 2]])]}
+     [{:x 1, :y 1, :xt/id "stuff1"}]]
+    [:put-docs :stuff {:xt/id "stuff2-new-id", :x 2, :y 2, :z 1}]
+    {:update :stuff,
+     :set {:z [:+ :z 1]},
+     :where [:= :xt/id "stuff1"]}]}
   _]}

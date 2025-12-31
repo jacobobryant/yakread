@@ -1,0 +1,354 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.app.advertise :refer :all]
+  [com.wsscode.pathom3.connect.operation :as pco]
+  [clj-http.client :as http]
+  [clojure.string :as str]],
+ :fixtures
+ {biffweb-com-post
+  (->
+   (http/get "https://biffweb.com/p/xtdb2-prerelease/")
+   (dissoc :http-client)
+   (update :headers update-keys str/lower-case))},
+ :tests
+ [{:doc "delete-payment-method",
+   :eval
+   (t/test-route
+    delete-payment-method
+    :post
+    {:biff/secret {:stripe/api-key "abc123"},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user
+      {:user/ad {:ad/id "ad1", :ad/payment-method "xyz"}}}}),
+   :result
+   [{:biff.fx/tx
+     [{:update :ad,
+       :set
+       {:ad/payment-method nil,
+        :ad/card-details nil,
+        :ad/updated-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]"},
+       :where [:= :xt/id "ad1"]}]}
+    {:biff.fx/http
+     {:method :post,
+      :url "https://api.stripe.com/v1/payment_methods/xyz/detach",
+      :basic-auth ["abc123"]}}
+    {:status 200, :headers {"HX-Location" ["/advertise" nil]}}]}
+  _
+  {:doc "receive-payment-method :get valid session",
+   :eval
+   (t/test-route
+    receive-payment-method
+    :get
+    {:db {:ad [{:xt/id "ad1", :ad/session-id "my-session-id"}]},
+     :biff/secret {:stripe/api-key "abc123"},
+     :params {:session-id "my-session-id"}}),
+   :result
+   {:biff.fx/http
+    {:method :get,
+     :url "https://api.stripe.com/v1/checkout/sessions/my-session-id",
+     :basic-auth ["abc123"],
+     :multi-param-style :array,
+     :as :json,
+     :query-params
+     {:expand ["setup_intent" "setup_intent.payment_method"]}},
+    :ad/id "ad1",
+    :biff.fx/next :save-payment-method}}
+  _
+  {:doc "receive-payment-method :get invalid session",
+   :eval
+   (t/test-route
+    receive-payment-method
+    :get
+    {:db {},
+     :biff/secret {:stripe/api-key "abc123"},
+     :params {:session-id "my-session-id"}}),
+   :result {:biff.fx/next :redirect}}
+  _
+  {:doc "receive-payment-method :save-payment-method",
+   :eval
+   (t/test-route
+    receive-payment-method
+    :get
+    :save-payment-method
+    {:biff.fx/http {:body {:setup_intent {:payment_method "pm1"}}},
+     :biff/now (t/zdt 2000),
+     :ad/id "ad2"}),
+   :result
+   {:biff.fx/tx
+    [{:update :ad,
+      :set
+      {:ad/session-id nil,
+       :ad/payment-method nil,
+       :ad/card-details [:lift nil],
+       :ad/updated-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]"},
+      :where [:= :xt/id "ad2"]}],
+    :biff.fx/next :redirect}}
+  _
+  {:doc "add-payment-method :post existing customer",
+   :eval
+   (t/test-route
+    add-payment-method
+    :post
+    {:biff/secret {:stripe/api-key "abc123"},
+     :biff.fx/pathom
+     {:session/user
+      {:user/email "hello@example.com",
+       :user/ad {:ad/customer-id "some-customer-id"}}}}),
+   :result
+   {:biff.fx/next :create-session, :ad/customer-id "some-customer-id"}}
+  _
+  {:doc "add-payment-method :post new customer",
+   :eval
+   (t/test-route
+    add-payment-method
+    :post
+    {:biff/secret {:stripe/api-key "abc123"},
+     :biff.fx/pathom
+     {:session/user {:user/email "hello@example.com"}}}),
+   :result
+   {:biff.fx/http
+    {:request-method :post,
+     :url "https://api.stripe.com/v1/customers",
+     :basic-auth ["abc123"],
+     :form-params {:email "hello@example.com"},
+     :as :json},
+    :biff.fx/next :create-customer}}
+  _
+  {:doc "add-payment-method :create-customer",
+   :eval
+   (t/test-route
+    add-payment-method
+    :post
+    :create-customer
+    {:biff.fx/http {:body {:id "customer-id"}},
+     :biff/now (t/zdt 2000),
+     :session {:uid t/zero-uuid}}),
+   :result
+   {:biff.fx/tx
+    [[:biff/upsert
+      :ad
+      [:ad/user]
+      {:ad/user #uuid "00000000-0000-0000-0000-000000000000",
+       :ad/customer-id "customer-id",
+       :ad/updated-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :biff/on-insert
+       {:xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :ad/approve-state :pending,
+        :ad/balance 0,
+        :ad/recent-cost 0}}]],
+    :biff.fx/next :create-session,
+    :ad/customer-id "customer-id"}}
+  _
+  {:doc "add-payment-method :create-session",
+   :eval
+   (t/test-route
+    add-payment-method
+    :post
+    :create-session
+    {:biff/base-url "https://example.com",
+     :biff/secret {:stripe/api-key "abc123"},
+     :ad/customer-id "customer1"}),
+   :result
+   {:biff.fx/http
+    {:request-method :post,
+     :url "https://api.stripe.com/v1/checkout/sessions",
+     :basic-auth ["abc123"],
+     :multi-param-style :array,
+     :form-params
+     {:payment_method_types ["card"],
+      :mode "setup",
+      :customer "customer1",
+      :success_url
+      "https://example.com[\"/_biff/api/com.yakread.app.advertise/receive-payment-method\" nil]?session-id={CHECKOUT_SESSION_ID}",
+      :cancel_url "https://example.com[\"/advertise\" nil]"},
+     :as :json},
+    :biff.fx/next :redirect}}
+  _
+  {:doc "add-payment-method :redirect",
+   :eval
+   (t/test-route
+    add-payment-method
+    :post
+    :redirect
+    {:biff.fx/http
+     {:body {:url "https://example.com", :id "session-id"}},
+     :session {:uid "user1"},
+     :biff/now (t/zdt 2000)}),
+   :result
+   {:biff.fx/tx
+    [[:biff/upsert
+      :ad
+      [:ad/user]
+      {:ad/user "user1",
+       :ad/session-id "session-id",
+       :ad/updated-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]],
+    :status 303,
+    :headers {"Location" "https://example.com"}}}
+  _
+  {:doc "save-ad",
+   :eval
+   (t/test-route
+    save-ad
+    :post
+    {:biff.form/params
+     {:ad/url "example.com",
+      :ad/bid 350,
+      :ad/budget 2000,
+      :ad/title "hey"},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom {:session/user {:xt/id t/zero-uuid}}}),
+   :result
+   {:status 303,
+    :headers {"Location" ["/advertise" {:saved true}]},
+    :biff.fx/tx
+    [[:biff/upsert
+      :ad
+      [:ad/user]
+      {:ad/updated-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :biff/on-insert
+       {:xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :ad/balance 0,
+        :ad/recent-cost 0},
+       :ad/user #uuid "00000000-0000-0000-0000-000000000000",
+       :ad/approve-state :pending,
+       :ad/paused nil,
+       :ad/title "hey",
+       :ad/description nil,
+       :ad/url "https://example.com",
+       :ad/image-url nil,
+       :ad/budget 3500,
+       :ad/bid 350}]]}}
+  _
+  {:doc "save-ad still approved",
+   :eval
+   (t/test-route
+    save-ad
+    :post
+    {:biff.form/params
+     {:ad/url "https:/example.com",
+      :ad/title "Title",
+      :ad/description "Description",
+      :ad/image-url "https://example.com/image.png",
+      :ad/approve-state :approved,
+      :ad/bid 350,
+      :ad/budget 2000},
+     :biff/now (t/zdt 2000),
+     :biff.fx/pathom
+     {:session/user
+      {:xt/id t/zero-uuid,
+       :user/ad
+       {:ad/url "https:/example.com",
+        :ad/title "Title",
+        :ad/description "Description",
+        :ad/image-url "https://example.com/image.png",
+        :ad/approve-state :approved}}}}),
+   :result
+   {:status 303,
+    :headers {"Location" ["/advertise" {:saved true}]},
+    :biff.fx/tx
+    [[:biff/upsert
+      :ad
+      [:ad/user]
+      {:ad/updated-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :biff/on-insert
+       {:xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :ad/balance 0,
+        :ad/recent-cost 0},
+       :ad/user #uuid "00000000-0000-0000-0000-000000000000",
+       :ad/approve-state :approved,
+       :ad/paused nil,
+       :ad/title "Title",
+       :ad/description "Description",
+       :ad/url "https:/example.com",
+       :ad/image-url "https://example.com/image.png",
+       :ad/budget 3500,
+       :ad/bid 350}]]}}
+  _
+  {:doc "upload-image :post",
+   :eval
+   (t/test-route
+    upload-image
+    :post
+    {:biff/base-url "https://example.com",
+     :yakread.s3.images/edge "https://images.example.com",
+     :biff.form/params {:ad/title "hey"},
+     :multipart-params
+     {"image-file"
+      {:tempfile "file-body", :content-type "image/png"}}}),
+   :result
+   [{:biff.fx/s3
+     {:config-ns yakread.s3.images,
+      :method "PUT",
+      :key "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+      :body "file-body",
+      :headers
+      {"x-amz-acl" "public-read", "content-type" "image/png"}}}
+    {:biff.fx/http
+     {:url
+      "https://images.weserv.nl/?url=https%3A//images.example.com/bb20b45f-d4d9-5138-3d93-cb799b3970be&w=150&h=150&fit=cover&a=attention",
+      :method :get,
+      :headers {"User-Agent" "https://example.com"}}}
+    {:biff.fx/pathom
+     [{(:com.yakread.app.advertise/form-ad
+        {:ad
+         {:ad/title "hey",
+          :ad/image-url
+          "https://images.example.com/bb20b45f-d4d9-5138-3d93-cb799b3970be"}})
+       [:ad/ui-preview-card]}]}
+    {:biff.fx/next :render,
+     :com.yakread.app.advertise/url
+     "https://images.example.com/bb20b45f-d4d9-5138-3d93-cb799b3970be"}]}
+  _
+  {:doc "form-ad",
+   :eval
+   (form-ad
+    (pco/with-node-params
+     {:biff.form/params
+      {:ad/title "Title", :ad/description "Description"}}
+     {:ad {:ad/title "Different Title"}})
+    {:session/user {:user/ad {:xt/id "abc123"}}}),
+   :result
+   {:com.yakread.app.advertise/form-ad
+    {:ad/title "Different Title",
+     :ad/description "Description",
+     :xt/id "abc123"}}}
+  _
+  {:doc "autocomplete :get",
+   :eval
+   (t/test-route
+    autocomplete
+    :get
+    {:biff.form/params {:ad/url "https://example.com"}}),
+   :result
+   {:biff.fx/http
+    {:url "https://example.com",
+     :method :get,
+     :throw-exceptions false},
+    :biff.fx/next :query}}
+  _
+  {:doc "autocomplete :query",
+   :eval
+   (t/test-route
+    autocomplete
+    :get
+    :query
+    {:biff.form/params {:ad/title "Title"},
+     :biff.fx/http biffweb-com-post}),
+   :result
+   {:biff.fx/pathom
+    [{(:com.yakread.app.advertise/form-ad
+       {:ad
+        {:ad/title "Title",
+         :ad/description "The time is at hand",
+         :ad/image-url
+         "https://biffweb.com/cards/xtdb2-prerelease.png"}})
+      [:ad/ui-preview-card]}],
+    :biff.fx/next :render,
+    :com.yakread.app.advertise/ad
+    {:ad/title "Title",
+     :ad/description "The time is at hand",
+     :ad/image-url "https://biffweb.com/cards/xtdb2-prerelease.png"}}}
+  _]}

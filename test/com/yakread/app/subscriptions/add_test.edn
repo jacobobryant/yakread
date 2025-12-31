@@ -76,9 +76,9 @@
    :eval
    (t/test-route
     add-rss
+    :post
     :add-urls
-    {:request-method :post,
-     :params {:session {:uid 1}},
+    {:params {:session {:uid 1}},
      :db {},
      :biff.fx/http
      {:url "https://example.com",
@@ -94,9 +94,9 @@
    :eval
    (t/test-route
     add-rss
+    :post
     :add-urls
-    {:request-method :post,
-     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+    {:session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
      :db {},
      :biff/now (t/zdt 2000),
      :biff.fx/http
@@ -144,9 +144,9 @@
    :eval
    (t/test-route
     add-rss
+    :post
     :add-urls
-    {:request-method :post,
-     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+    {:session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
      :db {},
      :biff/now (t/zdt 2000),
      :biff.fx/http
@@ -194,9 +194,9 @@
    :eval
    (t/test-route
     add-rss
+    :post
     :add-urls
-    {:request-method :post,
-     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+    {:session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
      :db
      {:feed
       [{:xt/id "feed1", :feed/url "https://obryant.dev/feed.xml"}]},
@@ -241,9 +241,9 @@
    :eval
    (t/test-route
     add-opml
+    :post
     :end
-    {:request-method :post,
-     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+    {:session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
      :db {},
      :biff/now (t/zdt 2000),
      :biff.fx/slurp
@@ -316,9 +316,9 @@
    :eval
    (t/test-route
     add-opml
+    :post
     :end
-    {:request-method :post,
-     :session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
+    {:session {:uid #uuid "12340000-0000-0000-0000-000000000000"},
      :biff/now (t/zdt 2000),
      :biff.fx/slurp ""}),
    :result

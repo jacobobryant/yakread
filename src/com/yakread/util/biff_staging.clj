@@ -235,12 +235,23 @@
         new-records (into []
                           (keep (fn [record]
                                   (when-not (contains? on->id (on-fn record))
-                                    (merge {:xt/id (gen/uuid)} record))))
+                                    (into {}
+                                          (filter (comp some? val))
+                                          (merge {:xt/id (gen/uuid)}
+                                                 (dissoc record :biff/on-insert :biff/on-update)
+                                                 (:biff/on-insert record))))))
                           records)
         existing-records (into []
                                (keep (fn [record]
                                        (when-some [id (on->id (on-fn record))]
-                                         (assoc record :xt/id id))))
+                                         (merge (into {}
+                                                      (map (fn [[k v]]
+                                                             (if (keyword? v)
+                                                               [k [:lift v]]
+                                                               [k v])))
+                                                      (dissoc record :biff/on-insert :biff/on-update))
+                                                (:biff/on-update record)
+                                                {:xt/id id}))))
                                records)]
     (vec (concat
           [[:biff/assert-query query results]]

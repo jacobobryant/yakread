@@ -24,6 +24,8 @@
   (:import
    [java.time Instant]))
 
+(def zero-uuid #uuid "00000000-0000-0000-0000-000000000000")
+
 (defn submit-tx [node tx]
   (->> tx
        (biffs/resolve-tx-ops {:biff/conn node})
@@ -54,8 +56,17 @@
   `(with-open [~node-sym (start-test-node ~db-contents)]
      ~@body))
 
-(defn test-route [route state {:keys [request-method db] :as ctx}]
-  (let [[_ {f (or request-method state)}] route]
+(defn test-route [route method & args]
+  (let [[state opts] (if (keyword? (first args))
+                       args
+                       [method (first args)])
+        {:keys [db] :as ctx} opts
+        [_ {f method :as handlers}] route]
+    (assert (some? handlers) "invalid route")
+    (assert (some? f)
+            (if (some? method)
+              "invalid :request-method"
+              ":request-method is required"))
     ;; TODO use a var from this namespace maybe?
     (binding [lib.route/*testing* true]
       (if db
@@ -115,7 +126,7 @@
          (try
            {:result (binding [gen/*rnd* (java.util.Random. 0)]
                       (walk/postwalk identity (eval (:eval example))))}
-           (catch Exception e
+           (catch Throwable e
              ;; Only show the part of the stack trace that come from the eval'd code.
              {:ex (truncate-ex e "com.yakread.lib.test$eval_STAR_")})))]
     (sorted-map*

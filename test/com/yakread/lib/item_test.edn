@@ -168,7 +168,7 @@
         {:item/image-url "https://example.com/some-image.png",
          :item/content-key
          #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
-         :item/lang "fi",
+         :item/lang "nl",
          :item/doc-type :item/direct,
          :xt/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}]
        [:put-docs

@@ -230,8 +230,8 @@
          [:ad/card-details   ?         [:map {:closed true}
                                         [:brand     :string]
                                         [:last4     :string]
-                                        [:exp_year  :int]
-                                        [:exp_month :int]]])
+                                        [:exp-year  :int]
+                                        [:exp-month :int]]])
 
    :ad.click (table
                {:biff/prefixed-by :ad.click/ad}

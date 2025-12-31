@@ -195,7 +195,8 @@
         :session {:uid user-id},
         :params {:sub/id "sub1"}}
        {})))),
-   :result ({:params/sub {:xt/id "sub1", :sub/user "user1"}} nil)}
+   :result
+   ({:params/sub {:xt/id "sub1", :sub/user {:xt/id "user1"}}} nil)}
   _
   {:doc "params-checked",
    :eval
@@ -228,10 +229,10 @@
    :result
    {:valid
     {:params.checked/subscriptions
-     [{:xt/id #uuid "00000000-0000-0000-0000-000000000000",
-       :sub/user "user1"}
-      {:xt/id #uuid "00000000-0000-0000-0000-000000000001",
-       :sub/user "user1"}]},
+     [{:sub/id #uuid "00000000-0000-0000-0000-000000000000",
+       :sub/user {:xt/id "user1"}}
+      {:sub/id #uuid "00000000-0000-0000-0000-000000000001",
+       :sub/user {:xt/id "user1"}}]},
     :unauthorized nil,
     :missing nil}}
   _
