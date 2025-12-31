@@ -274,3 +274,8 @@
 
 (defn submit-tx [ctx tx]
   (biffx/submit-tx ctx (resolve-tx-ops ctx tx)))
+
+(defn bundle [& {:as k->query}]
+  {:select (mapv (fn [[k query]]
+                   [[:nest_many query] k])
+                 k->query)})

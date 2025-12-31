@@ -1,0 +1,132 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.app.for-you :refer :all]],
+ :tests
+ [{:doc "record-item-click no existing skips",
+   :eval
+   (t/test-route
+    record-item-click
+    :post
+    {:db {},
+     :biff/safe-params
+     {:action :action/click-item,
+      :t (t/zdt 2000),
+      :skip #{(t/uuid 3) (t/uuid 2)},
+      :item/id (t/uuid 1),
+      :user/id (t/uuid 0)},
+     :biff/now (t/zdt 2000)}),
+   :result
+   {:status 204,
+    :biff.fx/tx
+    ([:biff/upsert
+      :reclist
+      [:reclist/user :reclist/created-at]
+      {:reclist/user #uuid "00000000-0000-0000-0000-000000000000",
+       :reclist/created-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :reclist/clicked
+       #{#uuid "00000000-0000-0000-0000-000000000001"},
+       :xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be"}]
+     [:biff/upsert
+      :skip
+      [:skip/reclist :skip/item]
+      {:skip/reclist #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+       :skip/item #uuid "00000000-0000-0000-0000-000000000002",
+       :xt/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}
+      {:skip/reclist #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+       :skip/item #uuid "00000000-0000-0000-0000-000000000003",
+       :xt/id #uuid "0000ba3d-c812-a76d-554d-cd2b40b5f04b"}]
+     [:biff/upsert
+      :user-item
+      [:user-item/user :user-item/item]
+      {:user-item/user #uuid "00000000-0000-0000-0000-000000000000",
+       :user-item/item #uuid "00000000-0000-0000-0000-000000000001",
+       :user-item/viewed-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}])}}
+  _
+  {:doc "record-item-click with existing skips",
+   :eval
+   (t/test-route
+    record-item-click
+    :post
+    {:db
+     {:reclist
+      [{:xt/id (t/uuid 0),
+        :reclist/clicked #{(t/uuid 1) (t/uuid 4)},
+        :reclist/user (t/uuid 5),
+        :reclist/created-at (t/zdt 2000)}],
+      :skip
+      [{:xt/id "skip1",
+        :skip/reclist (t/uuid 0),
+        :skip/item (t/uuid 2)}
+       {:xt/id "skip2",
+        :skip/reclist (t/uuid 0),
+        :skip/item (t/uuid 3)}]},
+     :biff/safe-params
+     {:action :action/click-item,
+      :t (t/zdt 2000),
+      :skip #{(t/uuid 1) (t/uuid 2)},
+      :item/id (t/uuid 3),
+      :user/id (t/uuid 5)},
+     :biff/now (t/zdt 2000)}),
+   :result
+   {:status 204,
+    :biff.fx/tx
+    ([:biff/upsert
+      :reclist
+      [:reclist/user :reclist/created-at]
+      {:reclist/user #uuid "00000000-0000-0000-0000-000000000005",
+       :reclist/created-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :reclist/clicked
+       #{#uuid "00000000-0000-0000-0000-000000000001"
+         #uuid "00000000-0000-0000-0000-000000000003"
+         #uuid "00000000-0000-0000-0000-000000000004"},
+       :xt/id #uuid "00000000-0000-0000-0000-000000000000"}]
+     [:delete :skip "skip2"]
+     [:biff/upsert
+      :user-item
+      [:user-item/user :user-item/item]
+      {:user-item/user #uuid "00000000-0000-0000-0000-000000000005",
+       :user-item/item #uuid "00000000-0000-0000-0000-000000000003",
+       :user-item/viewed-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}])}}
+  _
+  {:doc "record-ad-click",
+   :eval
+   (t/test-route
+    record-ad-click
+    :post
+    {:db {},
+     :biff/safe-params
+     {:action :action/click-ad,
+      :t (t/zdt 2000),
+      :skip #{},
+      :ad/id (t/uuid 1),
+      :ad/click-cost 50,
+      :ad.click/source :email,
+      :user/id (t/uuid 0)},
+     :biff/now (t/zdt 2000)}),
+   :result
+   {:status 204,
+    :biff.fx/tx
+    ([:biff/upsert
+      :reclist
+      [:reclist/user :reclist/created-at]
+      {:reclist/user #uuid "00000000-0000-0000-0000-000000000000",
+       :reclist/created-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :reclist/clicked
+       #{#uuid "00000000-0000-0000-0000-000000000001"},
+       :xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be"}]
+     [:biff/upsert
+      :ad-click
+      [:ad.click/user :ad.click/ad]
+      {:ad.click/user #uuid "00000000-0000-0000-0000-000000000000",
+       :ad.click/ad #uuid "00000000-0000-0000-0000-000000000001",
+       :ad.click/created-at
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :ad.click/cost 50,
+       :ad.click/source :email}])}}
+  _]}
