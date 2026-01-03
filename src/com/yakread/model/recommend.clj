@@ -416,8 +416,8 @@
                                          n-skips-key]}]
     ::pco/output [{output-key [:xt/id
                                :item/rec-type]}]}
-   (fn [{candidates :user/item-candidates
-         :keys [read-urls]}]
+   (fn [_ {candidates :user/item-candidates
+           :keys [read-urls]}]
      (let [read? (fn [url]
                    (contains? read-urls url))
 
@@ -448,7 +448,7 @@
                                      (not= (url->host url)
                                            (url->host (:item/url selection))))
                                    candidates))))))]
-    {output-key (mapv #(assoc % :item/rec-type :item.rec-type/discover) recommendations)}))))
+       {output-key (mapv #(assoc % :item/rec-type :item.rec-type/discover) recommendations)}))))
 
 (def discover-recs
   (discover-recs-resolver {:op-name `discover-recs

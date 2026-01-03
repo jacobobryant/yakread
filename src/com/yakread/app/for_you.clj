@@ -1,13 +1,12 @@
 (ns com.yakread.app.for-you
   (:require
    [clojure.data.generators :as gen]
-   [clojure.set :as set]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.route :as lib.route :refer [defpost href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]
    [com.yakread.util.biff-staging :as biffs]))
@@ -85,7 +84,8 @@
                         [[:biff/upsert :user-item [:user-item/user :user-item/item]
                           {:user-item/user user-id
                            :user-item/item item-id
-                           :user-item/viewed-at now}]]))}))))
+                           :user-item/viewed-at now
+                           :xt/id (biffx/prefix-uuid user-id (gen/uuid))}]]))}))))
 
 (fx/defroute record-ad-click
   :post

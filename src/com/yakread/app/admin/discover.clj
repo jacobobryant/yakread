@@ -2,33 +2,32 @@
   (:require
    [com.biffweb :as biff]
    [com.yakread.lib.admin :as lib]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.pipeline :as pipe]
-   [com.yakread.lib.route :as lib.route :refer [defget defpost href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]))
 
 (declare page-route)
 
-(defpost save-moderation
-  :start
+(fx/defroute save-moderation
+  :post
   (fn [{{:keys [block all-items]} :params}]
-    (let [block-ids (->> (if (string? block)
-                           [block]
-                           block)
-                         (mapv parse-uuid)
-                         set)
-          tx (for [id all-items]
-               {:db/doc-type :item/direct
-                :db/op :update
-                :xt/id id
-                :item.direct/candidate-status (if (block-ids id)
-                                                :blocked
-                                                :approved)})]
-      {:biff.pipe/next [(pipe/tx tx)]
+    (let [block-ids (into #{}
+                          (map parse-uuid)
+                          (if (string? block)
+                            [block]
+                            block))
+          tx (into [:patch-docs :item]
+                   (for [id all-items]
+                     {:xt/id id
+                      :item.direct/candidate-status (if (block-ids id)
+                                                      :blocked
+                                                      :approved)}))]
+      {:biff.fx/tx tx
        :status 303
        :headers {"location" (href page-route)}})))
 
-(defget page-content-route "/admin/discover/content"
+(fx/defroute-pathom page-content-route "/admin/discover/content"
   [:admin.moderation/remaining
    :admin.moderation/approved
    :admin.moderation/blocked
@@ -38,6 +37,8 @@
      :item/n-likes
      :item/url
      :item/ui-read-more-card]}]
+
+  :get
   (fn [ctx {:admin.moderation/keys [next-batch remaining approved blocked ingest-failed]}]
     [:<>
      [:.max-sm:mx-4 remaining " items left. " approved " approved. " blocked " blocked. "
@@ -67,8 +68,10 @@
                      :class '[w-full]}
            "Save")])]]))
 
-(defget page-route "/admin/discover"
+(fx/defroute-pathom page-route "/admin/discover"
   [:app.shell/app-shell]
+
+  :get
   (fn [ctx {:keys [app.shell/app-shell]}]
     (app-shell
      {:wide true}

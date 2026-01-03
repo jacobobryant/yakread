@@ -53,7 +53,7 @@
 
 (defget page-route "/admin/dashboard"
   [:app.shell/app-shell]
-  (fn [ctx {:keys [app.shell/app-shell]}]
+  (fn [_ {:keys [app.shell/app-shell]}]
     (app-shell
      {:wide true}
      (ui/page-header {:title "Admin"})
