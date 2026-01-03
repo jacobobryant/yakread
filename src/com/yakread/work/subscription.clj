@@ -89,7 +89,6 @@
   (fn [{:keys [biff/conn biff/job biff.fx/http biff/now feed/failed-syncs]}]
     (let [{feed-id :feed/id}          job
           {:keys [headers exception]} http
-          _ (prn http)
           remus-output                (when-not exception
                                         (biff/catchall (remus/parse-http-resp http)))
           success                     (some? remus-output)

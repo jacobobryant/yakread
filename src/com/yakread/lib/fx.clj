@@ -229,6 +229,8 @@
    :biff.fx/render (fn [ctx {:keys [route-sym request-method] :as extra-ctx}]
                      (let [[_ {handler request-method}] @(requiring-resolve route-sym)]
                        (handler (merge ctx extra-ctx))))
+   :biff.fx/sleep (fn [ctx ms]
+                    (Thread/sleep (long ms)))
 
    :com.yakread.fx/js call-js
 

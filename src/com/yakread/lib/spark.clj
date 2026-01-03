@@ -2,9 +2,14 @@
   (:require
    [clojure.tools.logging :as log]
    [com.biffweb :refer [q]]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.indexes :as pci]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
-   [com.wsscode.pathom3.interface.eql :as p.eql])
+   [com.wsscode.pathom3.interface.eql :as p.eql]
+   [com.yakread.lib.ads :as lib.ads]
+   [com.yakread.util.biff-staging :as biffs]
+   [honey.sql.helpers]
+   [tick.core :as tick])
   (:import
    [java.time Instant]
    [org.apache.spark.api.java JavaSparkContext]
@@ -13,99 +18,94 @@
 (defn- median [xs]
   (first (take (/ (count xs) 2) xs)))
 
-(defresolver item-candidates [{:keys [biff/db]} _]
+(defresolver item-candidates [{:keys [biff/conn]} _]
   {::pco/output [{::item-candidates [:xt/id
                                      :item/url]}]}
-  ;; TODO
-  {}
-  #_{::item-candidates
-   (mapv first
-         (q db
-            '{:find [(pull direct-item [:xt/id :item/url])]
-              :in [approved]
-              :timeout 999999
-              :where [[direct-item :item.direct/candidate-status approved]]}
-            :approved))})
+  {::item-candidates
+   (biffx/q conn
+            {:select [:xt/id :item/url]
+             :from :item
+             :where [:= :item.direct/candidate-status [:lift :approved]]})})
 
-(defresolver ads [{:biff/keys [db now]} _]
+
+(defresolver ads [{:biff/keys [conn now]} _]
   {::pco/output [{::all-ads [:xt/id]}
                  {::ad-candidates [:xt/id]}]}
-  ;; TODO
-  {}
-  #_(let [all-ads (mapv first
-                      (q db
-                         '{:find [(pull ad [*])]
-                           :where [[ad :ad/user]]}))
-        ad->recent-cost (q db
-                           '{:find [ad (sum cost)]
-                             :in [t]
-                             :where [[click :ad.click/ad ad]
-                                     [click :ad.click/cost cost]
-                                     [click :ad.click/created-at created-at]
-                                     [(< t created-at)]]}
-                           (.minus now (Period/ofWeeks 1)))
-        all-ads (mapv (fn [ad]
-                        (assoc ad :ad/recent-cost (get ad->recent-cost (:xt/id ad) 0)))
-                      all-ads)]
+  (let [all-ads (biffx/q conn
+                         {:select [:ad._id
+                                   :ad/approve-state
+                                   :ad/paused
+                                   :ad/payment-failed
+                                   :ad/payment-method
+                                   :ad/budget
+                                   [[:coalesce [:sum :ad.click/cost] 0] :ad/recent-cost]]
+                          :from :ad
+                          :left-join [:ad-click [:and
+                                                 [:= :ad.click/ad :ad._id]
+                                                 [:<
+                                                  (tick/<< now (tick/of-days 7))
+                                                  :ad.click/created-at]]]})]
     {::all-ads all-ads
      ::ad-candidates (filterv lib.ads/active? all-ads)}))
 
-(defresolver ad-ratings [{:keys [biff/db]} {::keys [all-ads]}]
+(defn- full-outer-join [on records]
+  (->> (group-by on records)
+       vals
+       (mapv #(apply merge %))))
+
+(defn ad-interaction-info [conn]
+  (->> {:union [{:select [[:ad._id :ad-id]
+                          [:reclist/user :user-id]
+                          [[:count :skip._id] :n-skips]
+                          [[:max :reclist/created-at] :last-skipped]
+                          [nil :last-clicked]]
+                 :from :ad
+                 :join [:skip [:= :skip/item :ad._id]
+                        :reclist [:= :skip/reclist :reclist._id]]}
+                {:select [[:ad._id :ad-id]
+                          [:ad.click/user :user-id]
+                          [nil :n-skips]
+                          [nil :last-skipped]
+                          [[:max :ad.click/created-at] :last-clicked]]
+                 :from :ad
+                 :join [:ad-click [:= :ad._id :ad.click/ad]]}]}
+       (biffx/q conn)
+       (full-outer-join (juxt :ad-id :user-id))))
+
+(defresolver ad-ratings [{:keys [biff/conn]} {::keys [all-ads]}]
   {::pco/input [{::all-ads [:xt/id]}]
    ::pco/output [{::ad-ratings [:rating/candidate
                                 :rating/user
                                 :rating/value
                                 :rating/created-at]}]}
-  {}
-  ;; TODO
-  (let [ad-ids (mapv :xt/id all-ads)
-        skip-info (q db
-                     '{:find [ad user (count skip) (max t)]
-                       :keys [ad user n-skips last-skipped]
-                       :in [[ad ...]]
-                       :where [[skip :skip/items ad]
-                               [skip :skip/user user]
-                               [skip :skip/timeline-created-at t]]}
-                     ad-ids)
-        click-info (q db
-                      '{:find [ad user (max t)]
-                        :keys [ad user last-clicked]
-                        :in [[ad ...]]
-                        :where [[click :ad.click/user user]
-                                [click :ad.click/ad ad]
-                                [click :ad.click/created-at t]]}
-                      ad-ids)
-        interaction-info (->> (concat skip-info click-info)
-                              (group-by (juxt :ad :user))
-                              (vals)
-                              (mapv #(apply merge %)))]
-    {::ad-ratings (vec
-                   (for [{:keys [ad user n-skips last-skipped last-clicked]} interaction-info]
-                     {:rating/candidate ad
-                      :rating/user user
-                      :rating/value (if last-clicked
-                                      0.75
-                                      (max 0 (- 0.5 (* 0.1 n-skips))))
-                      :rating/created-at (or last-clicked last-skipped)}))}))
+  {::ad-ratings (vec
+                 (for [{:keys [ad-id user-id n-skips last-skipped last-clicked]}
+                       (ad-interaction-info conn)]
+                   {:rating/candidate ad-id
+                    :rating/user user-id
+                    :rating/value (if last-clicked
+                                    0.75
+                                    (max 0 (- 0.5 (* 0.1 n-skips))))
+                    :rating/created-at (or last-clicked last-skipped)}))})
 
-(defresolver dedupe-item-id [{:keys [biff/db]} {::keys [item-candidates]}]
+(defresolver dedupe-item-id [{:keys [biff/conn]} {::keys [item-candidates]}]
   {::pco/input [{::item-candidates [:xt/id
                                     :item/url]}]
    ::pco/output [::dedupe-item-id]}
-  {}
-  ;; TODO
-  #_(let [item-id->url (into {}
-                           (q db
-                              '{:find [item url]
-                                :in [[url ...]]
-                                :where [[item :item/url url]]}
-                              (mapv :item/url item-candidates)))
+  (let [candidate-urls (not-empty (mapv :item/url item-candidates))
+        item-id->url (into {}
+                           (map (juxt :xt/id :item/url))
+                           (when candidate-urls
+                             (biffx/q conn
+                                      {:select [:xt/id :item/url]
+                                       :from :item
+                                       :where [:in :item/url candidate-urls]})))
         url->item-candidate-id (into {}
                                      (map (juxt :item/url :xt/id))
                                      item-candidates)]
-    {::dedupe-item-id (comp url->item-candidate-id item-id->url)}))
+    {::dedupe-item-id (update-vals item-id->url url->item-candidate-id)}))
 
-(defresolver item-ratings [{:keys [biff/db]} {::keys [item-candidates dedupe-item-id]}]
+(defresolver item-ratings [{:keys [biff/conn]} {::keys [item-candidates dedupe-item-id]}]
   {::pco/input [{::item-candidates [:xt/id
                                     :item/url]}
                 ::dedupe-item-id]
@@ -113,43 +113,53 @@
                                   :rating/candidate
                                   :rating/value
                                   :rating/created-at]}]}
-  {}
-  ;; TODO
-  #_(let [all-item-ids (mapv first
-                           (q db
-                              '{:find [item]
-                                :in [[url ...]]
-                                :where [[item :item/url url]]}
-                              (mapv :item/url item-candidates)))
+  (let [candidate-urls (not-empty (mapv :item/url item-candidates))
+        all-item-ids (when candidate-urls
+                       (not-empty
+                        (mapv :xt/id
+                              (biffx/q conn
+                                       {:select :xt/id
+                                        :from :item
+                                        :where [:in :item/url candidate-urls]}))))
+
+
         dedupe-usit (fn [usit]
                       (update usit :user-item/item dedupe-item-id))
         usit-key (juxt :user-item/user :user-item/item)
-        item-usits (->> (q db
-                           '{:find [(pull usit [*])]
-                             :in [[item ...]]
-                             :where [[usit :user-item/item item]]
-                             :timeout 120000}
-                           all-item-ids)
-                        (mapv (comp dedupe-usit first))
+        item-usits (->> (when all-item-ids
+                          (biffx/q conn
+                                   {:select [:user-item/user
+                                             :user-item/item
+                                             :user-item/favorited-at
+                                             :user-item/disliked-at
+                                             :user-item/reported-at
+                                             :user-item/viewed-at
+                                             :user-item/bookmarked-at]
+                                    :from :user-item
+                                    :where [:in :user-item/item all-item-ids]}))
+                        (mapv dedupe-usit)
                         (group-by usit-key)
                         (vals)
                         (mapv #(apply merge %)))
-        skip-usits (->> (q db
-                           '{:find [user item (count skip) (max t)]
-                             :keys [user-item/user
-                                    user-item/item
-                                    user-item/skips
-                                    user-item/skipped-at]
-                             :in [[item ...]]
-                             :where [[skip :skip/items item]
-                                     [skip :skip/user user]
-                                     [skip :skip/timeline-created-at t]]}
-                           all-item-ids)
+        merge-skips (fn [a b]
+                      (cond
+                        (number? a) (+ a b)
+                        (tick/zoned-date-time? a) (tick/max a b)
+                        :else b))
+        skip-usits (->> (when all-item-ids
+                          (biffx/q conn
+                                   {:select [[:reclist/user :user-item/user]
+                                             [:skip/item :user-item/item]
+                                             [[:count :skip._id] :user-item/skips]
+                                             [[:max :reclist/created-at] :user-item/skipped-at]]
+                                    :from :skip
+                                    :join [:reclist [:= :reclist._id :skip/reclist]]
+                                    :where [:in :skip/item all-item-ids]}))
                         (mapv dedupe-usit)
                         (group-by usit-key)
                         (vals)
                         (mapv (fn [usits]
-                                (apply merge-with #(if (number? %1) (+ %1 %2) %2) usits))))
+                                (apply merge-with merge-skips usits))))
         combined-usits (vals (merge-with merge
                                          (into {} (map (juxt usit-key identity) item-usits))
                                          (into {} (map (juxt usit-key identity) skip-usits))))]
@@ -163,10 +173,9 @@
                              [:user-item/disliked-at 0]
                              [:user-item/reported-at 0]
                              [:user-item/viewed-at 0.75]
-                             [:user-item/skipped-at (->> (:user-item/skips usit 0)
-                                                         (* 0.1)
-                                                         (- 0.5)
-                                                         (max 0))]
+                             [:user-item/skipped-at (-> 0.5
+                                                        (- (* 0.1 (:user-item/skips usit 0)))
+                                                        (max 0))]
                              [:user-item/bookmarked-at 0.6]])]
                 :when value]
             {:rating/user (:user-item/user usit)
@@ -175,15 +184,13 @@
              :rating/created-at created-at}))}))
 
 (defresolver spark-model [{:keys [yakread/spark]}
-                          {::keys [item-ratings ad-ratings item-candidates all-ads]}]
+                          {::keys [item-ratings ad-ratings]}]
   {::pco/input [{::item-ratings [:rating/user
                                  :rating/candidate
                                  :rating/value]}
                 {::ad-ratings [:rating/user
                                :rating/candidate
-                               :rating/value]}
-                {::item-candidates [:xt/id]}
-                {::all-ads [:xt/id]}]
+                               :rating/value]}]
    ::pco/output [::predict-fn]}
   (let [all-ratings (concat item-ratings ad-ratings)
         [[index->candidate candidate->index]
@@ -217,7 +224,7 @@
                                         (.rating rating)]))
                                 (when-let [user-idx (and als (user->index user-id))]
                                   (.recommendProducts als user-idx (count index->candidate))))]
-                      (fn [candidate-id candidate-type]
+                      (fn [candidate-id _candidate-type]
                         (or (candidate->score candidate-id)
                             0.1))))}))
 
@@ -273,17 +280,16 @@
 (defresolver item-candidate-ids [{::keys [item-candidates]}]
   {:yakread.model/item-candidate-ids (into #{} (map :xt/id) item-candidates)})
 
-(defresolver all-liked-items [{:keys [biff/db]} _]
+(defresolver all-liked-items [{:keys [biff/conn]} _]
   {::pco/output [{:yakread.model/all-liked-items
                   [:item/id :item/n-likes]}]}
   {:yakread.model/all-liked-items
-   (vec (q db
-           '{:find [item (count usit)]
-             :keys [item/id item/n-likes]
-             :timeout 240000
-             :order-by [[(count usit) :desc]]
-             :where [[usit :user-item/item item]
-                     [usit :user-item/favorited-at]]}))})
+   (biffx/q conn
+            {:select [[:user-item/item :item/id]
+                      [[:count :xt/id] :item/n-likes]]
+             :from :user-item
+             :where [:is-not :user-item/favorited-at nil]
+             :order-by [[:item/n-likes :desc]]})})
 
 (def ^:private pathom-env (pci/register [item-candidates
                                          ads
@@ -299,7 +305,7 @@
   (log/info "updating model")
   (merge {:yakread.model/item-candidate-ids #{}
           :yakread.model/get-candidates (constantly {})}
-         (p.eql/process (merge ctx pathom-env {:biff/now (Instant/now)})
+         (p.eql/process (merge ctx pathom-env {:biff/now (tick/zoned-date-time)})
                         {}
                         [(? :yakread.model/item-candidate-ids)
                          (? :yakread.model/get-candidates)
@@ -318,7 +324,11 @@
       :yakread.model/get-candidates
       )
 
+  (require 'repl)
   (time (do (new-model (repl/context))
+          :done))
+
+  (time (do (use-spark (repl/context))
           :done))
 
   (do (reset! (:yakread/model (repl/context))

@@ -1,0 +1,212 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.lib.spark :refer :all]],
+ :tests
+ [{:doc "item-candidates",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item2",
+        :item/url "url2",
+        :item.direct/candidate-status :approved}]}]
+    (item-candidates {:biff/conn node} {})),
+   :result
+   {:com.yakread.lib.spark/item-candidates
+    [{:xt/id "item2", :item/url "url2"}]}}
+  _
+  {:doc "ads",
+   :eval
+   (t/with-node
+    [node
+     {:ad
+      [{:xt/id "ad1",
+        :ad/approve-state :approved,
+        :ad/payment-method "some-payment-method",
+        :ad/budget 2000}
+       {:xt/id "ad2"}
+       {:xt/id "ad3"}],
+      :ad-click
+      [{:xt/id "ad-click1",
+        :ad.click/ad "ad2",
+        :ad.click/created-at (t/zdt 2000),
+        :ad.click/cost 100}
+       {:xt/id "ad-click2",
+        :ad.click/ad "ad2",
+        :ad.click/created-at (t/zdt 2000),
+        :ad.click/cost 200}
+       {:xt/id "ad-click3",
+        :ad.click/ad "ad2",
+        :ad.click/created-at (t/zdt 1999),
+        :ad.click/cost 200}
+       {:xt/id "ad-click4",
+        :ad.click/ad "ad3",
+        :ad.click/created-at (t/zdt 1999),
+        :ad.click/cost 200}]}]
+    (ads {:biff/conn node, :biff/now (t/zdt 2000)} {})),
+   :result
+   {:com.yakread.lib.spark/all-ads
+    [{:xt/id "ad2", :ad/recent-cost 300}
+     {:xt/id "ad3", :ad/recent-cost 0}
+     {:xt/id "ad1",
+      :ad/approve-state :approved,
+      :ad/payment-method "some-payment-method",
+      :ad/budget 2000,
+      :ad/recent-cost 0}],
+    :com.yakread.lib.spark/ad-candidates
+    [{:xt/id "ad1",
+      :ad/approve-state :approved,
+      :ad/payment-method "some-payment-method",
+      :ad/budget 2000,
+      :ad/recent-cost 0}]}}
+  _
+  {:doc "ad-ratings",
+   :eval
+   (t/with-node
+    [node
+     {:ad [{:xt/id "ad1"} {:xt/id "ad2"}],
+      :reclist
+      [{:xt/id "reclist1",
+        :reclist/user "user1",
+        :reclist/created-at (t/zdt 2000)}
+       {:xt/id "reclist2",
+        :reclist/user "user2",
+        :reclist/created-at (t/zdt 2001)}
+       {:xt/id "reclist3",
+        :reclist/user "user2",
+        :reclist/created-at (t/zdt 2003)}],
+      :skip
+      [{:xt/id "skip1", :skip/item "ad1", :skip/reclist "reclist1"}
+       {:xt/id "skip2", :skip/item "ad1", :skip/reclist "reclist2"}
+       {:xt/id "skip3", :skip/item "ad1", :skip/reclist "reclist3"}],
+      :ad-click
+      [{:xt/id "ad-click1",
+        :ad.click/user "user1",
+        :ad.click/ad "ad1",
+        :ad.click/created-at (t/zdt 2000)}
+       {:xt/id "ad-click2",
+        :ad.click/user "user1",
+        :ad.click/ad "ad1",
+        :ad.click/created-at (t/zdt 2002)}]}]
+    {:input (ad-interaction-info node),
+     :ratings (ad-ratings {:biff/conn node} {})}),
+   :result
+   {:input
+    [{:ad-id "ad1",
+      :user-id "user1",
+      :n-skips 1,
+      :last-skipped #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+      :last-clicked #time/zoned-date-time "2002-01-01T00:00Z[UTC]"}
+     {:ad-id "ad1",
+      :user-id "user2",
+      :n-skips 2,
+      :last-skipped #time/zoned-date-time "2003-01-01T00:00Z[UTC]"}],
+    :ratings
+    {:com.yakread.lib.spark/ad-ratings
+     [{:rating/candidate "ad1",
+       :rating/user "user1",
+       :rating/value 0.75,
+       :rating/created-at
+       #time/zoned-date-time "2002-01-01T00:00Z[UTC]"}
+      {:rating/candidate "ad1",
+       :rating/user "user2",
+       :rating/value 0.3,
+       :rating/created-at
+       #time/zoned-date-time "2003-01-01T00:00Z[UTC]"}]}}}
+  _
+  {:doc "dedupe-item-id",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item2", :item/url "url1"}
+       {:xt/id "item3", :item/url "url2"}
+       {:xt/id "item4", :item/url "url3"}]}]
+    (dedupe-item-id
+     {:biff/conn node}
+     {:com.yakread.lib.spark/item-candidates
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item3", :item/url "url2"}]})),
+   :result
+   {:com.yakread.lib.spark/dedupe-item-id
+    {"item3" "item3", "item2" "item1", "item1" "item1"}}}
+  _
+  {:doc "item-ratings empty input",
+   :eval
+   (t/with-node
+    [node {}]
+    (item-ratings
+     {:biff/conn node}
+     {:com.yakread.lib.spark/item-candidates [],
+      :com.yakread.lib.spark/dedupe-item-id {}})),
+   :result {:com.yakread.lib.spark/item-ratings []}}
+  _
+  {:doc "item-ratings non-empty input",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item2", :item/url "url2"}
+       {:xt/id "item3", :item/url "url2"}],
+      :user-item
+      [{:xt/id "usit1",
+        :user-item/user "user1",
+        :user-item/item "item1",
+        :user-item/favorited-at (t/zdt 2000)}],
+      :reclist
+      [{:xt/id "reclist1",
+        :reclist/user "user2",
+        :reclist/created-at (t/zdt 2002)}
+       {:xt/id "reclist2",
+        :reclist/user "user2",
+        :reclist/created-at (t/zdt 2001)}],
+      :skip
+      [{:xt/id "skip1", :skip/reclist "reclist1", :skip/item "item2"}
+       {:xt/id "skip2",
+        :skip/reclist "reclist2",
+        :skip/item "item3"}]}]
+    (item-ratings
+     {:biff/conn node}
+     {:com.yakread.lib.spark/item-candidates
+      [{:xt/id "item1", :item/url "url1"}
+       {:xt/id "item2", :item/url "url2"}],
+      :com.yakread.lib.spark/dedupe-item-id
+      {"item3" "item2", "item1" "item1", "item2" "item2"}})),
+   :result
+   {:com.yakread.lib.spark/item-ratings
+    [{:rating/user "user1",
+      :rating/candidate "item1",
+      :rating/value 1,
+      :rating/created-at
+      #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}
+     {:rating/user "user2",
+      :rating/candidate "item2",
+      :rating/value 0.3,
+      :rating/created-at
+      #time/zoned-date-time "2002-01-01T00:00Z[UTC]"}]}}
+  _
+  {:doc "all-liked-items",
+   :eval
+   (t/with-node
+    [node
+     {:user-item
+      [{:xt/id "usit1",
+        :user-item/item "item1",
+        :user-item/favorited-at (t/zdt 2000)}
+       {:xt/id "usit2",
+        :user-item/item "item2",
+        :user-item/favorited-at (t/zdt 2001)}
+       {:xt/id "usit3",
+        :user-item/item "item2",
+        :user-item/favorited-at (t/zdt 2000)}
+       {:xt/id "usit4", :user-item/item "item3"}]}]
+    (all-liked-items {:biff/conn node} {})),
+   :result
+   {:yakread.model/all-liked-items
+    [{:item/id "item2", :item/n-likes 2}
+     {:item/id "item1", :item/n-likes 1}]}}
+  _]}

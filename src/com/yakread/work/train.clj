@@ -1,61 +1,57 @@
 (ns com.yakread.work.train
   (:require
+   [clojure.data.generators :as gen]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.yakread.lib.core :as lib.core]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.item :as lib.item]
-   [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
    [com.yakread.lib.spark :as lib.spark]))
 
 (defn retrain [{:keys [yakread/model] :as ctx}]
   (reset! model (lib.spark/new-model ctx)))
 
-(defpipe add-candidate!
+(fx/defmachine add-candidate!
   (lib.item/add-item-machine*
    {:get-url    (comp :item/url :biff/job)
     :on-success (fn [_ctx item]
                   ;(log/info "Ingested candidate" (pr-str (:item/url item)))
                   {})
-    :on-error   (fn [ctx {:keys [item/url]}]
-                  (let [{:keys [status]} (ex-data (:biff.pipe/exception ctx))]
+    :on-error   (fn [{:keys [biff/now]} {:keys [item/url biff.fx/http]}]
+                  (let [{:keys [status]} (ex-data (:exception http))]
                     (if (= status 429)
                       (do
                         (log/warn "Received status 429 when fetching candidate" url)
-                        {:biff.pipe/next [(lib.pipe/sleep 10000)]})
-                      {:biff.pipe/next
-                       [(lib.pipe/tx [{:db/op                        :create
-                                       :db/doc-type                  :item/direct
-                                       :item/url                     url
-                                       :item/ingested-at             :db/now
-                                       :item/doc-type                :item/direct
-                                       :item.direct/candidate-status :ingest-failed}])
-                        (lib.pipe/sleep 2000)]})))}))
+                        {:biff.fx/sleep 10000})
+                      [{:biff.fx/tx [[:put-docs :item
+                                      {:xt/id (biffx/prefix-uuid "0000" (gen/uuid))
+                                       :item/url url
+                                       :item/ingested-at now
+                                       :item/doc-type :item/direct
+                                       :item.direct/candidate-status :ingest-failed}]]}
+                       {:biff.fx/sleep 2000}])))}))
 
-(defpipe queue-add-candidate
+(fx/defmachine queue-add-candidate
   :start
-  (fn [{:keys [biff/db biff/queues yakread.work.queue-add-candidate/enabled]}]
-    ;; TODO
-    #_(when (and enabled (= 0 (.size (:work.train/add-candidate queues))))
-      (let [urls (q db
-                    '{:find url
-                      :timeout 120000
-                      :where [[usit :user-item/item item]
-                              [usit :user-item/favorited-at]
-                              [item :item/url url]]})
-            direct-urls (set
-                         (q db
-                            '{:find url
-                              :in [[url ...] direct]
-                              :where [[item :item/url url]
-                                      [item :item/doc-type direct]]
-                              :timeout 120000}
-                            urls
-                            :item/direct))
-            urls (vec (remove direct-urls urls))]
-        (when (not-empty urls)
-          (log/info "Found" (count urls) "candidate URLs"))
-        {:biff.pipe/next (for [url urls]
-                           (lib.pipe/queue :work.train/add-candidate {:item/url url}))}))))
+  (fn [{:keys [biff/conn biff/queues yakread.work.queue-add-candidate/enabled]}]
+    (when-let [urls (and enabled
+                         (= 0 (.size (:work.train/add-candidate queues)))
+                         (->> {:select :item/url
+                               :from :item
+                               :where [:in
+                                       :item/url
+                                       {:select :item/url
+                                        :from :item
+                                        :join [:user-item [:= :item._id :user-item/item]]
+                                        :where [:is-not :user-item/favorited-at nil]}]
+                               :having [:not [:bool_or [:coalesce [:= :item/doc-type "item/direct"] false]]]}
+                              (biffx/q conn)
+                              (mapv :item/url)
+                              not-empty))]
+      (log/info "Found" (count urls) "candidate URLs")
+      {:biff.fx/queue {:jobs (for [url urls]
+                               [:work.train/add-candidate {:item/url url}])}})))
 
 (def module
   {:tasks [{:task     #'retrain

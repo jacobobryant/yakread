@@ -18,6 +18,7 @@
    [com.yakread.lib.pipeline :as lib.pipeline]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.smtp :as lib.smtp]
+   [com.yakread.lib.spark :as lib.spark]
    [com.yakread.lib.ui :as ui]
    [com.yakread.modules :as modules]
    [com.yakread.routes :as routes]
@@ -158,7 +159,7 @@
   [biff/use-aero-config
    use-error-reporting
    biffx/use-xtdb2
-   ;;lib.spark/use-spark
+   lib.spark/use-spark
    biff/use-queues
    biffx/use-xtdb2-listener
    biff/use-jetty

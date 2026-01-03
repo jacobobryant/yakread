@@ -1,0 +1,34 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.work.train :refer :all]],
+ :tests
+ [{:eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id "item1", :item/url "https://example.com/1"}
+       {:xt/id "item2", :item/url "https://example.com/2"}
+       {:xt/id "item3",
+        :item/url "https://example.com/2",
+        :item/doc-type :item/direct}
+       {:xt/id "item4", :item/url "https://example.com/4"}],
+      :user-item
+      [{:xt/id "user-item1",
+        :user-item/item "item1",
+        :user-item/favorited-at (t/zdt 2000)}
+       {:xt/id "user-item2",
+        :user-item/item "item2",
+        :user-item/favorited-at (t/zdt 2000)}]}]
+    (queue-add-candidate
+     {:biff/conn node,
+      :biff/queues
+      {:work.train/add-candidate
+       (java.util.concurrent.ConcurrentLinkedQueue.)},
+      :yakread.work.queue-add-candidate/enabled true})),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.train/add-candidate
+       {:item/url "https://example.com/1"}])}}}
+  _]}
