@@ -1,0 +1,38 @@
+{message
+ {:content
+  {:parts
+   [{:headers
+     {"content-type" ["text/plain"],
+      "content-transfer-encoding" ["7bit"]},
+     :content "the quick brown fox jumps over the lazy dog"}
+    {:headers
+     {"content-type" ["text/html"],
+      "content-transfer-encoding" ["7bit"]},
+     :content
+     "<!DOCTYPE html><html><head><title></title></head><body><div>the quick brown fox jumps over the lazy dog</div></body></html>"}]},
+  :raw
+  "MIME-Version: 1.0\nX-PersonalityId: 150084168\nDate: Sun, 04 Jan 2026 05:24:51 -0700\nFrom: \"Alice\" <alice@example.com>\nTo: \"Bob\" <bob@example.com>\nMessage-Id: <b118cd9b-36e3-4d66-997f-2ca18932cb67@app.fastmail.com>\nSubject: subject line\nList-Post: <https://example.com/p/example-post>\nContent-Type: multipart/alternative;\n boundary=3c5e59a5f6894d32b3773fdf5e1b9994\n\n--3c5e59a5f6894d32b3773fdf5e1b9994\nContent-Type: text/plain\nContent-Transfer-Encoding: 7bit\n\nthe quick brown fox jumps over the lazy dog\n--3c5e59a5f6894d32b3773fdf5e1b9994\nContent-Type: text/html\nContent-Transfer-Encoding: 7bit\n\n<!DOCTYPE html><html><head><title></title></head><body><div>the quick brown fox jumps over the lazy dog</div></body></html>\n--3c5e59a5f6894d32b3773fdf5e1b9994--\n\n",
+  :username "bob",
+  :recipients
+  [{:address "bob@example.com", :personal "Bob", :type "rfc822"}],
+  :headers
+  {"mime-version" ["1.0"],
+   "content-type"
+   ["multipart/alternative;\r\n boundary=3c5e59a5f6894d32b3773fdf5e1b9994"],
+   "list-post" ["<https://example.com/p/example-post>"],
+   "subject" ["subject line"],
+   "from" ["\"Alice\" <alice@example.com>"],
+   "date" ["Sun, 04 Jan 2026 05:24:51 -0700"],
+   "message-id"
+   ["<b118cd9b-36e3-4d66-997f-2ca18932cb67@app.fastmail.com>"],
+   "to" ["\"Bob\" <bob@example.com>"],
+   "x-personalityid" ["150084168"]},
+  :from
+  [{:address "alice@example.com", :personal "Alice", :type "rfc822"}],
+  :reply-to
+  [{:address "alice@example.com", :personal "Alice", :type "rfc822"}],
+  :domain "example.com",
+  :subject "subject line",
+  :to "bob@example.com"},
+ html
+ "<!DOCTYPE html><html><head><title></title></head><body><div>the quick brown fox jumps over the lazy dog</div></body></html>"}

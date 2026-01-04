@@ -205,7 +205,7 @@
   (tick/in (apply instant args) "UTC"))
 
 (defn uuid [n]
-  (parse-uuid (format "00000000-0000-0000-0000-%012d" n)))
+  (parse-uuid (format "%04d0000-0000-0000-0000-%012d" n n)))
 
 (defn queue [& jobs]
   (let [queue (java.util.concurrent.PriorityBlockingQueue. 11 (fn [a b] 0))]

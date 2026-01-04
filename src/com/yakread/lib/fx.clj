@@ -37,6 +37,7 @@
         results (mapv (fn [m]
                         (let [state-output (apply dissoc m (keys handlers))
                               fx-input     (select-keys m (keys handlers))
+                              ctx          (merge ctx state-output) ; TODO think about if there's a better way to do this
                               fx-output    (into {}
                                                  (map (fn [[k v]]
                                                         [k (try
@@ -162,22 +163,29 @@
     `(def ~sym (machine ~machine-name ~@args))))
 
 (defn call-js [{:biff/keys [secret] :as ctx} params]
-  (let [{:keys [base-url fn-name input local]} (merge (biff/select-ns-as ctx 'com.yakread.fx.js nil)
-                                                      params)]
-    (if local
-      (-> (biff/sh
-           "node" "-e" "console.log(JSON.stringify(require('./main.js').main(JSON.parse(fs.readFileSync(0)))))"
-           :dir (str "cloud-fns/packages/yakread/" fn-name)
-           :in (cheshire/generate-string input))
-          (cheshire/parse-string true)
-          :body)
-      (-> (str base-url fn-name)
-          (http/post {:headers {"X-Require-Whisk-Auth" (secret :com.yakread.fx.js/secret)}
-                      :as :json
-                      :form-params input
-                      :socket-timeout 10000
-                      :connection-timeout 10000})
-          :body))))
+  (let [{:keys [base-url fn-name input local catch-exceptions]}
+        (merge (biff/select-ns-as ctx 'com.yakread.fx.js nil) params)]
+    (try
+      (if local
+        (-> (biff/sh
+             "node" "-e" "console.log(JSON.stringify(require('./main.js').main(JSON.parse(fs.readFileSync(0)))))"
+             :dir (str "cloud-fns/packages/yakread/" fn-name)
+             :in (cheshire/generate-string input))
+            (cheshire/parse-string true)
+            :body)
+        (-> (str base-url fn-name)
+            (http/post {:headers {"X-Require-Whisk-Auth" (secret :com.yakread.fx.js/secret)}
+                        :as :json
+                        :form-params input
+                        :socket-timeout 10000
+                        :connection-timeout 10000
+                        :throw-exceptions (not catch-exceptions)})
+            :body))
+      (catch Exception e
+        (if catch-exceptions
+          {:exception e}
+          (throw e))))))
+
 
 (comment
   (for [local [true false]]
@@ -210,6 +218,8 @@
                        (p.eql/process ctx (or entity {}) query)))
    :biff.fx/slurp (fn [_ctx file]
                     (slurp file))
+   :biff.fx/spit (fn [_ctx {:keys [file content]}]
+                   (spit file content))
    :biff.fx/queue (fn [ctx {:keys [id job jobs wait-for-result]}]
                     (if jobs
                       (mapv (fn [[id job]]
@@ -231,6 +241,10 @@
                        (handler (merge ctx extra-ctx))))
    :biff.fx/sleep (fn [ctx ms]
                     (Thread/sleep (long ms)))
+   :biff.fx/drain-queue (fn [{:biff/keys [job queue]} _]
+                          (let [ll (java.util.LinkedList.)]
+                            (.drainTo queue ll)
+                            (into [job] ll)))
 
    :com.yakread.fx/js call-js
 

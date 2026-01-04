@@ -1,135 +1,193 @@
 {:require
  [[com.yakread.work.digest :refer :all]
   [com.yakread.lib.test :as t]
-  [clojure.data.generators :as gen]],
+  [clojure.data.generators :as gen]
+  [tick.core :as tick]],
  :tests
  [{:eval
-   (t/with-db
-    [db
-     [{:xt/id "user1", :user/email "user1@example.com"}
-      {:xt/id "user2",
-       :user/email "user2@example.com",
-       :user/digest-last-sent #time/instant "2000-01-01T00:00:00Z"}]]
+   (in-send-time-window?
+    {:biff/now (t/zdt 2000 1 1 10 30),
+     :user
+     {:user/digest-days #{:saturday},
+      :user/send-digest-at (tick/time "10:00"),
+      :user/timezone "UTC"}}),
+   :result true}
+  _
+  {:eval
+   (in-send-time-window?
+    {:biff/now (t/zdt 2000 1 1 10 30),
+     :user
+     {:user/digest-days #{:sunday},
+      :user/send-digest-at (tick/time "10:00"),
+      :user/timezone "UTC"}}),
+   :result false}
+  _
+  {:eval
+   (in-send-time-window?
+    {:biff/now (t/zdt 2000 1 1 9 59),
+     :user
+     {:user/digest-days #{:saturday},
+      :user/send-digest-at (tick/time "10:00"),
+      :user/timezone "UTC"}}),
+   :result false}
+  _
+  {:eval
+   (t/with-node
+    [node
+     {:user
+      [{:xt/id "user1", :user/email "user1@example.com"}
+       {:xt/id "user2",
+        :user/email "user2@example.com",
+        :user/digest-last-sent
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]}]
     (queue-prepare-digest
-     {:biff/db db,
-      :biff/now #time/instant "2000-01-01T16:00:01Z",
+     {:biff/conn node,
+      :biff/now #time/zoned-date-time "2000-01-01T16:00:01Z[UTC]",
       :biff/queues {:work.digest/prepare-digest (t/queue)},
       :yakread.work.digest/enabled true}
      :start)),
    :result
-   {:biff.pipe/next
-    ({:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/prepare-digest,
-      :biff.pipe.queue/job
-      {:user/email "user1@example.com", :xt/id "user1"}})}}
+   {:biff.fx/queue
+    {:jobs
+     ([:work.digest/prepare-digest
+       {:xt/id "user1", :user/email "user1@example.com"}])}}}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T11:44:57Z"}
-    {:user/digest-days #{:sunday},
-     :user/send-digest-at #time/time "04:00",
-     :user/timezone #time/zone "US/Mountain"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T11:44:57Z[UTC]",
+     :user
+     {:user/digest-days #{:sunday},
+      :user/send-digest-at #time/time "04:00",
+      :user/timezone "US/Mountain"}}),
    :result true}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T11:44:57Z"}
-    {:user/digest-days #{:sunday},
-     :user/send-digest-at #time/time "03:00",
-     :user/timezone #time/zone "US/Mountain"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T11:44:57Z[UTC]",
+     :user
+     {:user/digest-days #{:sunday},
+      :user/send-digest-at #time/time "03:00",
+      :user/timezone "US/Mountain"}}),
    :result false}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T11:44:57Z"}
-    {:user/digest-days #{:saturday :monday},
-     :user/send-digest-at #time/time "04:00",
-     :user/timezone #time/zone "US/Mountain"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T11:44:57Z[UTC]",
+     :user
+     {:user/digest-days #{:saturday :monday},
+      :user/send-digest-at #time/time "04:00",
+      :user/timezone "US/Mountain"}}),
    :result false}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T11:44:57Z"}
-    {:user/digest-days #{:sunday},
-     :user/send-digest-at #time/time "04:00",
-     :user/timezone #time/zone "US/Eastern"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T11:44:57Z[UTC]",
+     :user
+     {:user/digest-days #{:sunday},
+      :user/send-digest-at #time/time "04:00",
+      :user/timezone "US/Eastern"}}),
    :result false}
   _
   {:eval
-   (send-digest? {:biff/now #time/instant "2025-07-13T15:44:57Z"} {}),
+   (send-digest?
+    {:biff/now #time/zoned-date-time "2025-07-13T15:44:57Z[UTC]"}),
    :result true}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T15:44:57Z"}
-    {:user/suppressed-at #time/instant "2000-01-01T00:00:00Z"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T15:44:57Z[UTC]",
+     :user
+     {:user/suppressed-at
+      #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}}),
    :result false}
   _
   {:eval
    (send-digest?
-    {:biff/now #time/instant "2025-07-13T15:44:57Z"}
-    {:user/digest-last-sent #time/instant "2025-07-13T03:44:57Z"}),
+    {:biff/now #time/zoned-date-time "2025-07-13T15:44:57Z[UTC]",
+     :user
+     {:user/digest-last-sent
+      #time/zoned-date-time "2025-07-13T03:44:57Z[UTC]"}}),
    :result false}
   _
   {:eval (prepare-digest {:biff/job {:xt/id "user1"}} :start),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/pathom,
-      :biff.pipe.pathom/entity {:user/id "user1"},
-      :biff.pipe.pathom/query
-      [(:digest/payload
+   {:biff.fx/pathom
+    {:entity {:user/id "user1"},
+     :query
+     [(:digest/payload
+       {:com.wsscode.pathom3.connect.operation/optional? true})
+      {(:digest/subject-item
         {:com.wsscode.pathom3.connect.operation/optional? true})
-       {(:digest/subject-item
-         {:com.wsscode.pathom3.connect.operation/optional? true})
-        [:item/id :item/title]}
-       {(:user/ad-rec
-         {:com.wsscode.pathom3.connect.operation/optional? true})
-        [:ad/id]}
-       {(:user/icymi-recs
-         {:com.wsscode.pathom3.connect.operation/optional? true})
-        [:item/id]}
-       {(:user/digest-discover-recs
-         {:com.wsscode.pathom3.connect.operation/optional? true})
-        [:item/id]}]}
-     :end],
+       [:item/id :item/title]}
+      {(:user/ad-rec
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [:ad/id]}
+      {(:user/icymi-recs
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [:item/id]}
+      {(:user/digest-discover-recs
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [:item/id]}]},
+    :biff.fx/next :end,
     :session {:uid "user1"}}}
   _
   {:eval
    (binding
     [gen/*rnd* (java.util.Random. 0)]
     (prepare-digest
-     {:biff/job {:xt/id "user1", :user/email "user1@example.com"},
-      :biff.pipe.pathom/output
+     {:biff/now (t/zdt 2000),
+      :biff/job {:xt/id (t/uuid 0), :user/email "user1@example.com"},
+      :biff.fx/pathom
       {:digest/payload {:foo "bar"},
        :digest/subject-item
-       {:item/id "item1", :item/title "some item"},
-       :user/ad-rec {:ad/id "ad1"},
-       :user/icymi-recs [{:item/id "item2"} {:item/id "item3"}],
+       {:item/id (t/uuid 1), :item/title "some item"},
+       :user/ad-rec {:ad/id (t/uuid 2)},
+       :user/icymi-recs [{:item/id (t/uuid 3)} {:item/id (t/uuid 4)}],
        :user/digest-discover-recs
-       [{:item/id "item4"} {:item/id "item5"}]}}
+       [{:item/id (t/uuid 5)} {:item/id (t/uuid 6)}]}}
      :end)),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/tx,
-      :biff.pipe.tx/input
-      [{:db/doc-type :digest,
-        :xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
-        :digest/user "user1",
-        :digest/sent-at :db/now,
-        :digest/subject "item1",
-        :digest/ad "ad1",
-        :digest/icymi ["item2" "item3"],
-        :digest/discover ["item4" "item5"]}
-       {:db/doc-type :user,
-        :xt/id "user1",
-        :db/op :update,
-        :user/digest-last-sent :db/now}]}
-     {:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
+   [{:biff.fx/tx
+     ([:patch-docs
+       :user
+       {:xt/id #uuid "00000000-0000-0000-0000-000000000000",
+        :user/digest-last-sent
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}]
+      [:put-docs
+       :digest
+       {:xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :digest/user #uuid "00000000-0000-0000-0000-000000000000",
+        :digest/sent-at #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :digest/subject #uuid "00010000-0000-0000-0000-000000000001",
+        :digest/ad #uuid "00020000-0000-0000-0000-000000000002"}]
+      [:put-docs
+       :digest-item
+       {:xt/id #uuid "0003c9f6-4f1d-f03a-8ce9-70b71df42503",
+        :digest-item/digest
+        #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :digest-item/item #uuid "00030000-0000-0000-0000-000000000003",
+        :digest-item/kind :icymi}
+       {:xt/id #uuid "0004ba3d-c812-a76d-554d-cd2b40b5f04b",
+        :digest-item/digest
+        #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :digest-item/item #uuid "00040000-0000-0000-0000-000000000004",
+        :digest-item/kind :icymi}
+       {:xt/id #uuid "0005c222-9cef-e94d-fc1e-932efb9a0f58",
+        :digest-item/digest
+        #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :digest-item/item #uuid "00050000-0000-0000-0000-000000000005",
+        :digest-item/kind :discover}
+       {:xt/id #uuid "00061b08-05e8-b107-f0f5-b4f22d0cd0f1",
+        :digest-item/digest
+        #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+        :digest-item/item #uuid "00060000-0000-0000-0000-000000000006",
+        :digest-item/kind :discover}])}
+    {:biff.fx/queue
+     {:id :work.digest/send-digest,
+      :job
       {:user/email "user1@example.com",
-       :digest/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
-       :digest/payload {:foo "bar"}}}]}}
+       :digest/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
+       :digest/payload {:foo "bar"}}}}]}
   _
   {:eval
    (send-digest
@@ -138,10 +196,8 @@
       :work.digest/send-digest (t/queue)}}
     :start),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/sleep, :biff.pipe.sleep/ms 100000}
-     :biff.pipe/drain-queue
-     :start*]}}
+   [{:biff.fx/sleep 100000}
+    {:biff.fx/drain-queue nil, :biff.fx/next :start*}]}
   _
   {:eval
    (send-digest
@@ -150,10 +206,8 @@
       :work.digest/send-digest (t/queue 1 2 3)}}
     :start),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/sleep, :biff.pipe.sleep/ms 100000}
-     :biff.pipe/drain-queue
-     :start*]}}
+   [{:biff.fx/sleep 100000}
+    {:biff.fx/drain-queue nil, :biff.fx/next :start*}]}
   _
   {:eval
    (send-digest
@@ -161,10 +215,7 @@
      {:work.digest/prepare-digest (t/queue 1 2 3),
       :work.digest/send-digest (t/queue 1 2 3)}}
     :start),
-   :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/sleep, :biff.pipe.sleep/ms 5000}
-     :start]}}
+   :result {:biff.fx/sleep 5000, :biff.fx/next :start}}
   _
   {:eval
    (send-digest
@@ -173,7 +224,7 @@
       :work.digest/send-digest (t/queue 1 2 3)},
      :com.yakread.work.digest/n-emails-limit 2}
     :start),
-   :result {:biff.pipe/next [:biff.pipe/drain-queue :start*]}}
+   :result {:biff.fx/drain-queue nil, :biff.pipe/next :start*}}
   _
   {:eval
    (send-digest
@@ -187,24 +238,21 @@
       {:digest/id "digest5", :digest/payload {:e 5}}]}
     :start*),
    :result
-   {:biff.pipe/next
-    ({:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
-      {:digest/id "digest4", :digest/payload {:d 4}}}
-     {:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
-      {:digest/id "digest5", :digest/payload {:e 5}}}
-     {:biff.pipe/current :biff.pipe/http,
-      :biff.pipe.http/input
-      {:method :post,
-       :url "https://api.mailersend.com/v1/bulk-email",
-       :oauth-token "12345",
-       :content-type :json,
-       :as :json,
-       :body "[{\"a\":1},{\"b\":2},{\"c\":3}]"}}
-     :record-bulk-send),
+   {:biff.fx/queue
+    {:jobs
+     ([:work.digest/send-digest
+       {:digest/id "digest4", :digest/payload {:d 4}}]
+      [:work.digest/send-digest
+       {:digest/id "digest5", :digest/payload {:e 5}}])},
+    :biff.fx/http
+    {:method :post,
+     :url "https://api.mailersend.com/v1/bulk-email",
+     :oauth-token "12345",
+     :content-type :json,
+     :as :json,
+     :body "[{\"a\":1},{\"b\":2},{\"c\":3}]"},
+    :biff.fx/next :record-bulk-send,
+    :com.yakread.work.digest/payload-size 25,
     :com.yakread.work.digest/digest-ids
     ["digest1" "digest2" "digest3"]}}
   _
@@ -220,45 +268,47 @@
       {:digest/id "digest5", :digest/payload {:e 5}}]}
     :start*),
    :result
-   {:biff.pipe/next
-    ({:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
-      {:digest/id "digest3", :digest/payload {:c 3}}}
-     {:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
-      {:digest/id "digest4", :digest/payload {:d 4}}}
-     {:biff.pipe/current :biff.pipe/queue,
-      :biff.pipe.queue/id :work.digest/send-digest,
-      :biff.pipe.queue/job
-      {:digest/id "digest5", :digest/payload {:e 5}}}
-     {:biff.pipe/current :biff.pipe/http,
-      :biff.pipe.http/input
-      {:method :post,
-       :url "https://api.mailersend.com/v1/bulk-email",
-       :oauth-token "12345",
-       :content-type :json,
-       :as :json,
-       :body "[{\"a\":1},{\"b\":2}]"}}
-     :record-bulk-send),
+   {:biff.fx/queue
+    {:jobs
+     ([:work.digest/send-digest
+       {:digest/id "digest3", :digest/payload {:c 3}}]
+      [:work.digest/send-digest
+       {:digest/id "digest4", :digest/payload {:d 4}}]
+      [:work.digest/send-digest
+       {:digest/id "digest5", :digest/payload {:e 5}}])},
+    :biff.fx/http
+    {:method :post,
+     :url "https://api.mailersend.com/v1/bulk-email",
+     :oauth-token "12345",
+     :content-type :json,
+     :as :json,
+     :body "[{\"a\":1},{\"b\":2}]"},
+    :biff.fx/next :record-bulk-send,
+    :com.yakread.work.digest/payload-size 17,
     :com.yakread.work.digest/digest-ids ["digest1" "digest2"]}}
   _
   {:eval
    (send-digest
-    {:biff.pipe.http/input {:body "hello there"},
-     :biff.pipe.http/output {:body {:bulk_email_id "abc123"}},
+    {:biff/now (t/zdt 2000),
+     :biff.fx/http {:body {:bulk_email_id "abc123"}},
+     :com.yakread.work.digest/payload-size 11,
      :com.yakread.work.digest/digest-ids ["digest1" "digest2"]}
     :record-bulk-send),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/tx,
-      :biff.pipe.tx/input
-      [{:db/doc-type :bulk-send,
-        :bulk-send/sent-at :db/now,
+   [{:biff.fx/tx
+     [[:put-docs
+       :bulk-send
+       {:xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+        :bulk-send/sent-at
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
         :bulk-send/payload-size 11,
-        :bulk-send/mailersend-id "abc123",
-        :bulk-send/digests ["digest1" "digest2"]}]}
-     {:biff.pipe/current :biff.pipe/sleep,
-      :biff.pipe.sleep/ms 23000/3}]}}
+        :bulk-send/mailersend-id "abc123"}]
+      [:patch-docs
+       :digest
+       {:xt/id "digest1",
+        :digest/bulk-send #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"}
+       {:xt/id "digest2",
+        :digest/bulk-send
+        #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be"}]]}
+    {:biff.fx/sleep 7666}]}
   _]}

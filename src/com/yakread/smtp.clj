@@ -4,11 +4,13 @@
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
+   [com.biffweb.experimental :as biffx]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pipeline :as lib.pipe]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.smtp :as lib.smtp]
-   [xtdb.api :as-alias xt]) 
+   [xtdb.api :as-alias xt]
+   [tick.core :as tick]) 
   (:import
    [org.jsoup Jsoup]))
 
@@ -29,73 +31,103 @@
     (when-not (some-> url (str/includes? "link.mail.beehiiv.com"))
       url)))
 
-(def deliver*
-  (lib.pipe/make
-   ;; TODO
-   {}
-   #_{:start (fn [{:keys [biff/db yakread/domain biff.smtp/message]}]
-             (let [result (and (or (not domain) (= domain (:domain message)))
-                               (some? (biff/lookup-id db :user/email-username (str/lower-case (:username message)))))
-                   html (when result
-                          (lib.smtp/extract-html message))]
-               (log/info "receiving email for"
-                         (str (str/lower-case (:username message)) "@" (:domain message)))
-               (if-not result
-                 (log/warn "Rejected incoming email for"
-                           (str (str/lower-case (:username message)) "@" (:domain message)))
-                 {:biff.pipe/next [:yakread.pipe/js :end]
-                  :biff.pipe/catch :yakread.pipe/js
-                  ::url (infer-post-url (:headers message) html)
-                  :yakread.pipe.js/fn-name "juice"
-                  :yakread.pipe.js/input {:html html}})))
-    :end (fn [{:keys [biff.smtp/message biff/db biff.pipe/now ::url]
-               {:keys [html]} :yakread.pipe.js/output}]
-           (if-not html
-             (do
-               (log/warn "juice failed to parse message for" (:username message))
-               {:biff.pipe/next [(lib.pipe/spit (str "storage/juice-failed/" (.toEpochMilli now) ".edn")
-                                                (pr-str message))]})
-             (let [html (-> html
-                            lib.content/normalize
-                            (str/replace #"#transparent" "transparent"))
-                   raw-content-key (gen/uuid)
-                   parsed-content-key (gen/uuid)
-                   from (some (fn [k]
-                                (->> (concat (:from message) (:reply-to message) [(:sender message)])
-                                     (some k)))
-                              [:personal :address])
-                   text (lib.content/html->text html)
-                   user-id (biff/lookup-id db :user/email-username (str/lower-case (:username message)))
-                   sub (biff/lookup db :sub/user user-id :sub.email/from from)
-                   sub-id (or (:xt/id sub) :db.id/new-sub)
-                   first-header (fn [header-name]
-                                  (some lib.smtp/decode-header (get-in message [:headers header-name])))]
-               {:biff.pipe/next [(lib.pipe/s3 'yakread.s3.emails raw-content-key (:raw message) "text/plain")
-                                 (lib.pipe/s3 'yakread.s3.content parsed-content-key html "text/html")
-                                 :biff.pipe/tx]
-                :biff.pipe.tx/input (concat
-                                     [(lib.core/some-vals
-                                       {:db/doc-type :item/email
-                                        :item/ingested-at :db/now
-                                        :item/title (:subject message)
-                                        :item/url url
-                                        :item/content-key parsed-content-key
-                                        :item/published-at :db/now
-                                        :item/excerpt (lib.content/excerpt text)
-                                        :item/author-name from
-                                        :item/lang (lib.content/lang html)
-                                        :item/length (count text)
-                                        :item.email/sub sub-id
-                                        :item.email/raw-content-key raw-content-key
-                                        :item.email/list-unsubscribe (first-header "list-unsubscribe")
-                                        :item.email/list-unsubscribe-post (first-header "list-unsubscribe-post")
-                                        :item.email/reply-to (some :address (:reply-to message))
-                                        :item.email/maybe-confirmation (or (nil? sub) nil)})]
-                                     (when-not sub
-                                       [{:db/doc-type :sub/email
-                                         :xt/id sub-id
-                                         :sub/user user-id
-                                         :sub.email/from from
-                                         :sub/created-at :db/now}
-                                        [::xt/fn :biff/ensure-unique {:sub/user user-id
-                                                                      :sub.email/from from}]]))})))}))
+(fx/defmachine deliver*
+  :start
+  (fn [{:keys [biff/conn yakread/domain biff.smtp/message]}]
+    (let [result (and (or (not domain) (= domain (:domain message)))
+                      (not-empty
+                       (biffx/q conn
+                                {:select 1
+                                 :from :user
+                                 :where [:=
+                                         :user/email-username
+                                         (str/lower-case (:username message))]})))
+          html (when result
+                 (lib.smtp/extract-html message))]
+      (log/info "receiving email for"
+                (str (str/lower-case (:username message)) "@" (:domain message)))
+      (if-not result
+        (log/warn "Rejected incoming email for"
+                  (str (str/lower-case (:username message)) "@" (:domain message)))
+        {:com.yakread.fx/js {:fn-name "juice" :input {:html html}}
+         :biff.fx/next :end
+         ::url (infer-post-url (:headers message) html)})))
+
+  :end
+  (fn [{:keys [biff.smtp/message biff/conn biff/now ::url]
+        {:keys [html]} :com.yakread.fx/js}]
+    (if-not html
+      (do
+        (log/warn "juice failed to parse message for" (:username message))
+        {:biff.fx/spit {:file (str "storage/juice-failed/" 
+                                   (inst-ms (tick/instant now))
+                                   ".edn")
+                        :content (pr-str message)}})
+      (let [html (-> html
+                     lib.content/normalize
+                     (str/replace #"#transparent" "transparent"))
+            raw-content-key (gen/uuid)
+            parsed-content-key (gen/uuid)
+            from (some (fn [k]
+                         (->> (concat (:from message)
+                                      (:reply-to message)
+                                      [(:sender message)])
+                              (some (fn [recipient]
+                                      (when (str/includes? (get recipient k "") "@")
+                                        (get recipient k))))))
+                       [:personal :address])
+            text (lib.content/html->text html)
+
+            [{user-id :user/id
+              sub-id :sub/id}]
+            (biffx/q conn
+                     {:select [[:user._id :user/id]
+                               [:sub._id :sub/id]]
+                      :from :user
+                      :left-join [:sub [:and
+                                        [:= :sub/user :user._id]
+                                        [:= :sub.email/from from]]]
+                      :where [:= :user/email-username (str/lower-case (:username message))]
+                      :limit 1})
+            new-sub (nil? sub-id)
+            sub-id (or sub-id (biffx/prefix-uuid user-id (gen/uuid)))
+            first-header (fn [header-name]
+                           (some lib.smtp/decode-header (get-in message [:headers header-name])))]
+        [{:biff.fx/s3 [{:config-ns 'yakread.s3.emails
+                        :key raw-content-key
+                        :method "PUT"
+                        :body (:raw message)
+                        :headers {"x-amz-acl" "private"
+                                  "content-type" "text/plain"}}
+                       {:config-ns 'yakread.s3.content
+                        :key parsed-content-key
+                        :method "PUT"
+                        :body html
+                        :headers {"x-amz-acl" "private"
+                                  "content-type" "text/html"}}]}
+         {:biff.fx/tx (concat
+                       [[:put-docs :item
+                         (lib.core/some-vals
+                          {:xt/id (biffx/prefix-uuid sub-id (gen/uuid))
+                           :item/ingested-at now
+                           :item/title (:subject message)
+                           :item/url url
+                           :item/content-key parsed-content-key
+                           :item/published-at now
+                           :item/excerpt (lib.content/excerpt text)
+                           :item/author-name from
+                           :item/lang (lib.content/lang html)
+                           :item/length (count text)
+                           :item.email/sub sub-id
+                           :item.email/raw-content-key raw-content-key
+                           :item.email/list-unsubscribe (first-header "list-unsubscribe")
+                           :item.email/list-unsubscribe-post (first-header "list-unsubscribe-post")
+                           :item.email/reply-to (some :address (:reply-to message))
+                           :item.email/maybe-confirmation (or new-sub nil)})]]
+                       (when new-sub
+                         [[:put-docs :sub
+                           {:xt/id sub-id
+                            :sub/user user-id
+                            :sub.email/from from
+                            :sub/created-at now}]
+                          (biffx/assert-unique :sub {:sub/user user-id :sub.email/from from})]))}]))))

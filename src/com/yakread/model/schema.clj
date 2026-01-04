@@ -169,6 +169,7 @@
              [:digest/bulk-send (?r :bulk-send) :uuid])
 
    :digest-item (table
+                  {:biff/prefixed-by :digest-item/item}
                   [:xt/id              :uuid]
                   [:digest-item/digest :uuid]
                   [:digest-item/item   :uuid]

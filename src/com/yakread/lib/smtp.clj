@@ -114,7 +114,7 @@
       :subject (.getSubject msg)
       :content (some-> (biff/catchall (.getContent msg)) datafy-content not-empty)})))
 
-(defn- deliver-opts [to raw]
+(defn deliver-opts [to raw]
   (let [msg (parse raw)
         headers (datafy-headers msg)]
     (lib.core/some-vals

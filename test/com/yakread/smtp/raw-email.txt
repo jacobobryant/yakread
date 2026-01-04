@@ -1,0 +1,23 @@
+MIME-Version: 1.0
+X-PersonalityId: 150084168
+Date: Sun, 04 Jan 2026 05:24:51 -0700
+From: "Alice" <alice@example.com>
+To: "Bob" <bob@example.com>
+Message-Id: <b118cd9b-36e3-4d66-997f-2ca18932cb67@app.fastmail.com>
+Subject: subject line
+List-Post: <https://example.com/p/example-post>
+Content-Type: multipart/alternative;
+ boundary=3c5e59a5f6894d32b3773fdf5e1b9994
+
+--3c5e59a5f6894d32b3773fdf5e1b9994
+Content-Type: text/plain
+Content-Transfer-Encoding: 7bit
+
+the quick brown fox jumps over the lazy dog
+--3c5e59a5f6894d32b3773fdf5e1b9994
+Content-Type: text/html
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html><html><head><title></title></head><body><div>the quick brown fox jumps over the lazy dog</div></body></html>
+--3c5e59a5f6894d32b3773fdf5e1b9994--
+
