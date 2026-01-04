@@ -15,7 +15,6 @@
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.pathom :as lib.pathom]
-   [com.yakread.lib.pipeline :as lib.pipeline]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.smtp :as lib.smtp]
    [com.yakread.lib.spark :as lib.spark]
@@ -32,9 +31,9 @@
    [reitit.ring :as reitit-ring]
    [taoensso.telemere :as tel]
    [taoensso.telemere.tools-logging :as tel.tl]
-   [time-literals.read-write :as time-literals]
-   ;[com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
-   [tick.core :as tick])
+   [tick.core :as tick]
+   [time-literals.read-write :as time-literals] ;[com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
+)
   (:gen-class))
 
 (def modules
@@ -52,7 +51,8 @@
 (def handler (-> (biff/reitit-handler {:router router})
                  biff/wrap-base-defaults
                  lib.mid/wrap-stripe-event
-                 lib.mid/wrap-monitoring))
+                 lib.mid/wrap-monitoring
+                 lib.mid/wrap-internal-error))
 
 (def static-pages (apply biff/safe-merge (map :static modules)))
 
@@ -107,7 +107,6 @@
         (merge pathom-env
                (some-> model deref)
                {:biff/router router
-                :biff.pipe/global-handlers lib.pipeline/global-handlers
                 :biff.fx/handlers fx/handlers
                 ;:biff/db (:biff/db snapshots)
                 ;:biff.index/snapshots snapshots
@@ -175,7 +174,6 @@
                      :biff/router router
                      :biff/send-email #'lib.email/send-email
                      :biff.beholder/on-save #'on-save
-                     :biff.pipe/global-handlers lib.pipeline/global-handlers
                      :biff.fx/handlers fx/handlers
                      ;;:biff.xtdb/tx-fns biff/tx-fns
                      :com.yakread/home-feed-cache (atom {})

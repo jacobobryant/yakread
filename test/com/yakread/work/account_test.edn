@@ -5,87 +5,76 @@
  :tests
  [{:eval (export-user-data {:biff/job {:user/id "abc123"}} :start),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/pathom,
-      :biff.pipe.pathom/entity {:user/id "abc123"},
-      :biff.pipe.pathom/query
-      [:user/id
-       :user/email
-       :user/timezone
-       :user.export/feed-subs
-       :user.export/bookmarks
-       :user.export/favorites]}
-     :biff.pipe/temp-dir
-     :upload]}}
+   {:biff.fx/pathom
+    {:entity {:user/id "abc123"},
+     :query
+     [:user/id
+      :user/email
+      :user/timezone
+      :user.export/feed-subs
+      :user.export/bookmarks
+      :user.export/favorites]},
+    :biff.fx/temp-dir {},
+    :biff.fx/next :upload}}
   _
   {:eval
    (export-user-data
     {:biff/now (t/instant 2000),
-     :biff.pipe.pathom/output
+     :biff.fx/pathom
      {:user/id "abc123",
       :user/email "hello@example.com",
       :user/timezone "America/Denver",
       :user.export/feed-subs "feed-subs",
       :user.export/bookmarks "bookmarks",
       :user.export/favorites "favorites"},
-     :biff.pipe.temp-dir/path "/tmp/dir"}
+     :biff.fx/temp-dir "/tmp/dir"}
     :upload),
    :result
-   {:biff.pipe/next
-    ({:biff.pipe/current :biff.pipe/write,
-      :biff.pipe.write/file
-      #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/feed-subscriptions.opml",
-      :biff.pipe.write/content "feed-subs"}
-     {:biff.pipe/current :biff.pipe/write,
-      :biff.pipe.write/file
-      #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/bookmarks.csv",
-      :biff.pipe.write/content "bookmarks"}
-     {:biff.pipe/current :biff.pipe/write,
-      :biff.pipe.write/file
-      #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/favorites.csv",
-      :biff.pipe.write/content "favorites"}
-     {:biff.pipe/current :biff.pipe/shell,
-      :biff.pipe.shell/args
-      ["zip"
-       "-r"
-       "yakread-export-1999-12-31-946684800000-abc123.zip"
-       "yakread-export-1999-12-31-946684800000-abc123"
-       :dir
-       "/tmp/dir"]}
-     {:biff.pipe/current :biff.pipe/delete-files,
-      :biff.pipe.delete-files/path
-      #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123"}
-     {:biff.pipe/current :biff.pipe/s3,
-      :biff.pipe.s3/input
-      {:key "yakread-export-1999-12-31-946684800000-abc123.zip",
-       :config-ns yakread.s3.export,
-       :method "PUT",
-       :body
-       #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123.zip",
-       :headers
-       {"x-amz-acl" "private", "content-type" "application/zip"}}}
-     {:biff.pipe/current :biff.pipe/delete-files,
-      :biff.pipe.delete-files/path
-      "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123.zip"}
-     {:biff.pipe/current :biff.pipe.s3/presigned-url,
-      :biff.pipe.s3.presigned-url/input
-      {:key "yakread-export-1999-12-31-946684800000-abc123.zip",
-       :config-ns yakread.s3.export,
-       :method "GET",
-       :expires-at #time/instant "2000-01-08T00:00:00Z"}}
-     :send),
-    :com.yakread.work.account/email "hello@example.com"}}
+   [{:biff.fx/write
+     ({:file
+       #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/feed-subscriptions.opml",
+       :content "feed-subs"}
+      {:file
+       #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/bookmarks.csv",
+       :content "bookmarks"}
+      {:file
+       #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123/favorites.csv",
+       :content "favorites"})}
+    {:biff.fx/shell
+     ["zip"
+      "-r"
+      "yakread-export-1999-12-31-946684800000-abc123.zip"
+      "yakread-export-1999-12-31-946684800000-abc123"
+      :dir
+      "/tmp/dir"]}
+    {:biff.fx/delete-files
+     #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123"}
+    {:biff.fx/s3
+     {:config-ns yakread.s3.export,
+      :key "yakread-export-1999-12-31-946684800000-abc123.zip",
+      :method "PUT",
+      :body
+      #biff/file "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123.zip",
+      :headers
+      {"x-amz-acl" "private", "content-type" "application/zip"}}}
+    {:biff.fx/delete-files
+     "/tmp/dir/yakread-export-1999-12-31-946684800000-abc123.zip"}
+    {:biff.fx/s3-presigned-url
+     {:config-ns yakread.s3.export,
+      :key "yakread-export-1999-12-31-946684800000-abc123.zip",
+      :method "GET",
+      :expires-at #time/instant "2000-01-08T00:00:00Z"}}
+    {:biff.fx/next :send,
+     :com.yakread.work.account/email "hello@example.com"}]}
   _
   {:eval
    (export-user-data
-    {:biff.pipe.s3.presigned-url/output "example.com",
+    {:biff.fx/s3-presigned-url "example.com",
      :com.yakread.work.account/email "hello@example.com"}
     :send),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/email,
-      :biff.pipe.email/input
-      {:template :export,
-       :to "hello@example.com",
-       :download-url "example.com"}}]}}
+   {:biff.fx/email
+    {:template :export,
+     :to "hello@example.com",
+     :download-url "example.com"}}}
   _]}

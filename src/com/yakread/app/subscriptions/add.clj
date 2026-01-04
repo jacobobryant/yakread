@@ -5,13 +5,13 @@
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.route :refer [defpost href redirect]]
+   [com.yakread.lib.route :refer [href redirect]]
    [com.yakread.lib.rss :as lib.rss]
    [com.yakread.lib.ui :as ui]
    [com.yakread.lib.user :as lib.user]
-   [com.yakread.lib.core :as lib.core]
    [com.yakread.routes :as routes]))
 
 (let [response (fn [success username]

@@ -1,0 +1,5 @@
+{:require
+ [[com.yakread.lib.test :as t]
+  [clojure.data.generators :as gen]
+  [com.yakread.work.materialized-views :refer :all]],
+ :tests [{:eval (+ 1 1), :result 2} _]}

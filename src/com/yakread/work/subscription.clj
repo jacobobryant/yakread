@@ -60,6 +60,11 @@
        first
        :value))
 
+(comment
+  (biffx/q (:biff/conn (repl/context)) "select * from feed")
+  (sync-feed! (merge (repl/context)
+                     {:biff/job {:feed/id #uuid "61781ae0-e119-3d49-e200-cb9c698396bb"}})))
+
 ;; TODO update url for feeds that change their URL
 (fx/defmachine sync-feed!
   :start

@@ -2,12 +2,13 @@
   (:require
    [cheshire.core :as cheshire]
    [clj-http.client :as http]
+   [clojure.java.io :as io]
+   [clojure.java.shell :as shell]
    [clojure.walk :as walk]
    [com.biffweb :as biff]
-   [com.biffweb.experimental :as biffx]
-   [com.yakread.util.biff-staging :as biffs]
    [com.wsscode.pathom3.interface.eql :as p.eql]
-   [com.yakread.lib.s3 :as lib.s3]))
+   [com.yakread.lib.s3 :as lib.s3]
+   [com.yakread.util.biff-staging :as biffs]))
 
 (defn- truncate-str
   "Truncates a string s to be at most n characters long, appending an ellipsis if any characters were removed."
@@ -186,7 +187,6 @@
           {:exception e}
           (throw e))))))
 
-
 (comment
   (for [local [true false]]
     (call-js @com.yakread/system
@@ -194,17 +194,22 @@
               :input {:url "https://example.com?foo=bar", :html "hello"}
               :local local})))
 
+(defn- http* [request]
+  (try
+    (-> (http/request request)
+        (assoc :url (:url request))
+        (dissoc :http-client))
+    (catch Exception e
+      (if (get request :throw-exceptions true)
+        (throw e)
+        {:url (:url request)
+         :exception e}))))
+
 (def handlers
-  {:biff.fx/http (fn [_ctx request]
-                   (try
-                     (-> (http/request request)
-                         (assoc :url (:url request))
-                         (dissoc :http-client))
-                     (catch Exception e
-                       (if (get request :throw-exceptions true)
-                         (throw e)
-                         {:url (:url request)
-                          :exception e}))))
+  {:biff.fx/http (fn [_ctx input]
+                   (if (map? input)
+                     (http* input)
+                     (mapv http* input)))
    :biff.fx/email (fn [{:keys [biff/send-email] :as ctx} input]
                     ;; This can be used in cases where we want a generic email interface not tied
                     ;; to a particular provider. For sending digests we need mailersend-specific
@@ -236,51 +241,33 @@
                  (if (map? input)
                    (lib.s3/request ctx input)
                    (mapv #(lib.s3/request ctx %) input)))
+   :biff.fx/s3-presigned-url lib.s3/presigned-url
    :biff.fx/render (fn [ctx {:keys [route-sym request-method] :as extra-ctx}]
                      (let [[_ {handler request-method}] @(requiring-resolve route-sym)]
                        (handler (merge ctx extra-ctx))))
-   :biff.fx/sleep (fn [ctx ms]
+   :biff.fx/sleep (fn [_ctx ms]
                     (Thread/sleep (long ms)))
    :biff.fx/drain-queue (fn [{:biff/keys [job queue]} _]
                           (let [ll (java.util.LinkedList.)]
                             (.drainTo queue ll)
                             (into [job] ll)))
+   :biff.fx/temp-dir (fn [_ctx {:keys [prefix] :or {prefix "biff"}}]
+                       (.toFile (java.nio.file.Files/createTempDirectory
+                                 prefix
+                                 (into-array java.nio.file.attribute.FileAttribute []))))
 
-   :com.yakread.fx/js call-js
-
-   ;; TODO
-   ;;:biff.pipe/s3 (fn [{:keys [biff.pipe.s3/input] :as ctx}]
-   ;;                (assoc ctx :biff.pipe.s3/output (lib.s3/request ctx input)))
-   ;;:biff.pipe.s3/presigned-url (fn [{:keys [biff.pipe.s3.presigned-url/input] :as ctx}]
-   ;;                              (assoc ctx :biff.pipe.s3.presigned-url/output (lib.s3/presigned-url ctx input)))
-   ;;:biff.pipe/sleep (fn [{:keys [biff.pipe.sleep/ms] :as ctx}]
-   ;;                   (Thread/sleep (long ms))
-   ;;                   ctx)
-   ;;:biff.pipe/drain-queue (fn [{:biff/keys [job queue] :as ctx}]
-   ;;                         (let [ll (java.util.LinkedList.)]
-   ;;                           (.drainTo queue ll)
-   ;;                           (assoc ctx :biff/jobs (into [job] ll))))
-   ;;:biff.pipe/spit (fn [{:biff.pipe.spit/keys [file content] :as ctx}]
-   ;;                  (io/make-parents (io/file file))
-   ;;                  (clojure.core/spit file content)
-   ;;                  ctx)
-   ;;:biff.pipe/write (fn [{:biff.pipe.write/keys [file content] :as ctx}]
-   ;;                   (io/make-parents (io/file file))
-   ;;                   (with-open [w (io/writer file)]
-   ;;                     (if (string? content)
-   ;;                       (.write w content)
-   ;;                       (doseq [line content]
-   ;;                         (.write w line)
-   ;;                         (.write line "\n"))))
-   ;;                   ctx)
-   ;;:biff.pipe/temp-dir (fn [{:keys [biff.pipe.temp-dir/prefix] :or {prefix "biff"} :as ctx}]
-   ;;                      (assoc ctx
-   ;;                             :biff.pipe.temp-dir/path
-   ;;                             (.toFile (java.nio.file.Files/createTempDirectory prefix (into-array java.nio.file.attribute.FileAttribute [])))))
-   ;;:biff.pipe/delete-files (fn [{:keys [biff.pipe.delete-files/path] :as ctx}]
-   ;;                          (run! io/delete-file (reverse (file-seq (io/file path))))
-   ;;                          ctx)
-   ;;:biff.pipe/shell (fn [{:keys [biff.pipe.shell/args] :as ctx}]
-   ;;                   (assoc ctx :biff.pipe.shell/output (apply shell/sh args)))
-   
-   })
+   :biff.fx/write (fn [_ctx input]
+                    (doseq [{:keys [file content]} (if (map? input) [input] input)]
+                      (io/make-parents (io/file file))
+                      (with-open [w (io/writer file)]
+                        (if (string? content)
+                          (.write w content)
+                          (doseq [line content]
+                            (.write w line)
+                            (.write line "\n")))))
+                    nil)
+   :biff.fx/shell (fn [_ctx args]
+                    (apply shell/sh args))
+   :biff.fx/delete-files (fn [_ctx path]
+                           (run! io/delete-file (reverse (file-seq (io/file path)))))
+   :com.yakread.fx/js call-js})

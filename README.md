@@ -86,8 +86,8 @@ Some notable namespaces (good places to start reading if you're interesting in l
   articles from other users.
 - `com.yakread.app.advertise`, `com.yakread.app.admin.advertise`, `com.yakread.app.settings`: some
   Stripe examples.
-- `com.yakread.lib.pipeline`, the effect-handling state machine stuff mentioned above. See `make` in
-  particular. I'm probably going to rename this namespace.
+- `com.yakread.lib.fx`, the effect-handling state machine stuff mentioned above. See `machine` in
+  particular.
 - `com.yakread.lib.route`, some helper functions/macros Biff uses when defining and referencing HTTP
   handlers. See `defget`, `defpost`, and `href`.
 - `com.yakread.lib.ui`, UI components that aren't coupled to your domain model (like `button`, etc)

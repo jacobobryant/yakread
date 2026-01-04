@@ -1,17 +1,11 @@
 (ns com.yakread.lib.route
   (:require
-   [cheshire.core :as cheshire]
    [clojure.string :as str]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pathom :as lib.pathom]
-   [com.yakread.lib.pipeline :as lib.pipe]
    [com.yakread.lib.serialize :as lib.serialize]
    [com.yakread.util.biff-staging :as biffs]
    [lambdaisland.uri :as uri]
-   [reitit.core :as reitit]
-   [ring.middleware.anti-forgery :as csrf]
-   [taoensso.nippy :as nippy]
-   [com.wsscode.pathom3.connect.operation :refer [?]]))
+   [taoensso.nippy :as nippy]))
 
 (defn- encode-uuid [x]
   (if (uuid? x)
@@ -56,13 +50,6 @@
       :else
       path)))
 
-(defn action [action-name route & {:as opts}]
-  (let [url (href route (:params opts {}))
-        opts (-> opts
-                 (dissoc :params)
-                 (assoc-in [:headers :x-csrf-token] csrf/*anti-forgery-token*))]
-    (str "@" (name action-name) "('" url "', " (cheshire/generate-string opts) ")")))
-
 (defn redirect [& args]
   {:status 303
    :headers {"Location" (apply href args)}})
@@ -70,15 +57,6 @@
 (defn hx-redirect [& args]
   {:status 303
    :headers {"HX-Redirect" (apply href args)}})
-
-(defn call [router route-name method ctx]
-  ((get-in (reitit/match-by-name router route-name)
-           [:data method :handler])
-   ctx))
-
-(defn handler [router route-name method]
-  (get-in (reitit/match-by-name router route-name)
-          [:data method :handler]))
 
 (defn wrap-nippy-params [handler]
   (fn
@@ -90,37 +68,3 @@
           (:ewt params) (assoc :biff/safe-params (lib.serialize/ewt-decode (jwt-secret) (:ewt params)))))))
     ([ctx handler-id]
      (handler ctx handler-id))))
-
-(defn safe-for-url? [s]
-  (boolean (re-matches #"[a-zA-Z0-9-_.+!*]+" s)))
-
-(defn- autogen-endpoint [ns* sym]
-  (let [href (str "/_biff/api/" ns* "/" sym)]
-    (assert (safe-for-url? (str sym)) (str "URL segment would contain invalid characters: " sym))
-    (assert (safe-for-url? (str ns*)) (str "URL segment would contain invalid characters: " ns*))
-    href))
-
-(defmacro defget
-  ([sym query handler]
-   `(defget ~sym ~(autogen-endpoint *ns* sym) ~query ~handler))
-  ([sym path query handler]
-   `(def ~sym [~path {:name ~(keyword (str *ns*) (str sym))
-                      :get (wrap-nippy-params (lib.pathom/handler ~query ~handler))}])))
-
-(defmacro defpost [sym & pipe-args]
-  `(def ~sym [~(autogen-endpoint *ns* sym)
-              {:name ~(keyword (str *ns*) (str sym))
-               :post (wrap-nippy-params (lib.pipe/make ~@pipe-args))}]))
-
-(defmacro defpost-pathom [sym query f & args]
-  `(defpost ~sym
-     :start (lib.pipe/pathom-query ~query :start*)
-     :start* (let [f# ~f]
-               (fn [ctx#]
-                 (f# ctx# (:biff.pipe.pathom/output ctx#))))
-     ~@args))
-
-(defmacro defget-pipe [sym & pipe-args]
-  `(def ~sym [~(autogen-endpoint *ns* sym)
-              {:name ~(keyword (str *ns*) (str sym))
-               :get (wrap-nippy-params (lib.pipe/make ~@pipe-args))}]))

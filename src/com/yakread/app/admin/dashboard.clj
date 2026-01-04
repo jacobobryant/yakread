@@ -3,8 +3,9 @@
    [clojure.java.shell :as sh]
    [com.yakread.lib.admin :as lib]
    [com.yakread.lib.core :as lib.core]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.route :as lib.route :refer [defget href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui])
   (:import
    [java.time ZoneId ZonedDateTime]))
@@ -17,12 +18,14 @@
 
 (declare page-route)
 
-(defget page-content-route "/admin/dashboard/content"
+(fx/defroute-pathom page-content-route "/admin/dashboard/content"
   [{:admin/recent-users
     [:user/email
      :user/joined-at]}
    :admin/dau
    :admin/revenue]
+
+  :get
   (fn [{:biff/keys [now queues]} {:admin/keys [recent-users dau revenue]}]
     (ui/wide-page-well
      [:.grid.xl:grid-cols-2.gap-8
@@ -51,8 +54,10 @@
             (get dau date 0)
             (ui/fmt-cents (get revenue date 0))])))])))
 
-(defget page-route "/admin/dashboard"
+(fx/defroute-pathom page-route "/admin/dashboard"
   [:app.shell/app-shell]
+
+  :get
   (fn [_ {:keys [app.shell/app-shell]}]
     (app-shell
      {:wide true}
@@ -60,9 +65,9 @@
      (lib/navbar :dashboard)
      (ui/lazy-load (href page-content-route)))))
 
-(defget logs-page "/admin/logs"
-  []
-  (fn [ctx _]
+(fx/defroute logs-page "/admin/logs"
+  :get
+  (fn [ctx]
     [:pre
      (:out (sh/sh "journalctl" "-u" "app" "-n" "300"))]))
 

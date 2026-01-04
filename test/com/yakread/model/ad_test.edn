@@ -189,20 +189,18 @@
   {:eval
    (get-stripe-status
     {:biff/secret {:stripe/api-key "12345"},
-     :biff.pipe.pathom/output
+     :biff.fx/pathom
      {:ad.credit/ad {:ad/customer-id "abc123"},
       :ad.credit/created-at (t/zdt 2000)}}
     :start),
    :result
-   {:biff.pipe/next
-    [{:biff.pipe/current :biff.pipe/http,
-      :biff.pipe.http/input
-      {:method :get,
-       :url "https://api.stripe.com/v1/payment_intents",
-       :basic-auth ["12345" ""],
-       :flatten-nested-form-params true,
-       :as :json,
-       :query-params
-       {:limit 100, :customer "abc123", :created {:gt "946684800"}}}}
-     :end]}}
+   {:biff.fx/http
+    {:method :get,
+     :url "https://api.stripe.com/v1/payment_intents",
+     :basic-auth ["12345" ""],
+     :flatten-nested-form-params true,
+     :as :json,
+     :query-params
+     {:limit 100, :customer "abc123", :created {:gt "946684800"}}},
+    :biff.fx/next :end}}
   _]}

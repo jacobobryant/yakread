@@ -10,12 +10,9 @@
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.pipeline :as lib.pipe]
-   [com.yakread.lib.route :as lib.route :refer [defget defget-pipe defpost
-                                                defpost-pathom href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.routes :as routes]
-   [rum.core :as rum]))
+   [com.yakread.routes :as routes]))
 
 (declare page-route)
 

@@ -231,7 +231,7 @@
     {:params.checked/subscriptions
      [{:sub/id #uuid "00000000-0000-0000-0000-000000000000",
        :sub/user {:xt/id "user1"}}
-      {:sub/id #uuid "00000000-0000-0000-0000-000000000001",
+      {:sub/id #uuid "00010000-0000-0000-0000-000000000001",
        :sub/user {:xt/id "user1"}}]},
     :unauthorized nil,
     :missing nil}}

@@ -1,104 +1,112 @@
 (ns com.yakread.work.materialized-views
   (:require
-   [com.biffweb :as biff]
+   [clojure.data.generators :as gen]
+   [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [?]]
-   [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
-   [xtdb.api :as-alias xt]))
+   [com.yakread.lib.fx :as fx]
+   [xtdb.api :as-alias xt]
+   [tick.core :as tick]))
 
-(defpipe update-views
+(fx/defmachine update-views
   :start
   (fn [{:keys [biff/job]}]
-    {:biff.pipe/next [(:view job)]})
+    {:biff.fx/next (:view job)})
 
   :sub-affinity
   (fn [{:keys [biff/job]}]
-    {:biff.pipe/next [(lib.pipe/pathom
-                       {:sub/id (:sub/id job)}
-                       [:sub/id
-                        :sub/affinity-low*
-                        :sub/affinity-high*
-                        {(? :sub/mv) [(? :mv.sub/affinity-low)
-                                      (? :mv.sub/affinity-high)]}])
-                      :sub-affinity-update]})
+    {:biff.fx/pathom {:entity {:sub/id (:sub/id job)}
+                      :query [:sub/id
+                              :sub/affinity-low*
+                              :sub/affinity-high*
+                              {(? :sub/mv) [(? :mv.sub/affinity-low)
+                                            (? :mv.sub/affinity-high)]}]}
+     :biff.fx/next :sub-affinity-update})
 
   :sub-affinity-update
-  (fn [{:keys [biff.pipe.pathom/output]}]
-    (let [{:sub/keys [id affinity-low* affinity-high* mv]} output]
+  (fn [{:keys [biff.fx/pathom]}]
+    (let [{:sub/keys [id affinity-low* affinity-high* mv]} pathom]
       (when (not= [affinity-low* affinity-high*]
                   [(:mv.sub/affinity-low mv) (:mv.sub/affinity-high mv)])
-        {:biff.pipe/next [(lib.pipe/tx
-                           [{:db/doc-type          :mv.sub
-                             :db.op/upsert         {:mv.sub/sub id}
-                             :mv.sub/affinity-low  affinity-low*
-                             :mv.sub/affinity-high affinity-high*}])]})))
+        {:biff.fx/tx [[:biff/upsert :mv-sub [:mv.sub/sub]
+                       {:xt/id (biffx/prefix-uuid id (gen/uuid))
+                        :mv.sub/sub id
+                        :mv.sub/affinity-low  affinity-low*
+                        :mv.sub/affinity-high affinity-high*}]]})))
 
   :current-item
-  (fn [{:biff/keys [db job]}]
-    ;; TODO
-    #_(let [{:user-item/keys [user item viewed-at]} job
+  (fn [{:biff/keys [conn job]}]
+    (let [{:user-item/keys [user item viewed-at]} job
 
           {current-item :user-item/item
            current-item-viewed-at :user-item/viewed-at}
           (first
-           (q db
-              '{:find (pull usit [:user-item/item
-                                  :user-item/viewed-at])
-                :in [user]
-                :where [[mv :mv.user/user user]
-                        [mv :mv.user/current-item item]
-                        [usit :user-item/user user]
-                        [usit :user-item/item item]]}
-              user))
+           (biffx/q conn
+                    {:select [:user-item/item :user-item/viewed-at]
+                     :from :mv-user
+                     :join [:user-item [:= :user-item/item :mv.user/current-item]]
+                     :where [:= :mv.user/user user]}))
 
           new-current-item (cond
                              (and viewed-at
                                   (or (not current-item-viewed-at)
-                                      (lib.core/increasing? current-item-viewed-at viewed-at)))
+                                      (tick/<= current-item-viewed-at viewed-at)))
                              item
 
                              (and (not viewed-at)
                                   (= item current-item))
-                             :db/dissoc)]
+                             ::remove)]
       (when new-current-item
-        {:biff.pipe/next [(lib.pipe/tx
-                           [{:db/doc-type :mv.user
-                             :db.op/upsert {:mv.user/user user}
-                             :mv.user/current-item new-current-item}])]}))))
+        {:biff.fx/tx [{:biff/upsert :mv-user [:mv.user/user]
+                       {:xt/id (biffx/prefix-uuid user (gen/uuid))
+                        :mv.user/user user
+                        :mv.user/current-item (when (not= new-current-item ::remove)
+                                                new-current-item)}}]}))))
 
-(defn- sub-id [db user-id item-id]
-  ;; TODO
-  #_(let [{email-sub :item.email/sub
-         feed :item.feed/feed} (xt/entity db item-id)]
-    (or email-sub
-        (when feed
-          (biff/lookup-id db
-                          :sub/user user-id
-                          :sub.feed/feed (:xt/id feed))))))
-
-(defpipe on-tx
+(fx/defmachine on-tx
   :start
-  (fn [{:keys [biff/db] ::xt/keys [tx]}]
-    {:biff.pipe/next
-     (for [[op doc] (::xt/tx-ops tx)
-           :when (= op ::xt/put)
-           job (distinct
-                (cond
-                  (:user-item/user doc)
-                  (concat (when-some [sub (sub-id db
-                                                  (:user-item/user doc)
-                                                  (:user-item/item doc))]
-                            [{:view :sub-affinity :sub/id sub}])
-                          [(merge {:view :current-item} doc)])
+  (fn [{:keys [biff/conn record]}]
+    {:biff.fx/queue
+     {:jobs
+      (for [job
+            (distinct
+             (cond
+               (:user-item/user record)
+               (concat
+                (when-some [sub-id (-> (biffx/q
+                                        conn
+                                        {:select [[[:coalesce :item.email/sub :sub._id]
+                                                   :sub/id]]
+                                         :from :item
+                                         :where [:= :item._id (:user-item/item record)]
+                                         :left-join [:sub [:and
+                                                           [:is-not :item.feed/feed nil]
+                                                           [:= :sub.feed/feed :item.feed/feed]
+                                                           [:= :sub/user (:user-item/user record)]]]
+                                         :limit 1})
+                                       first
+                                       :sub/id)]
+                  [{:view :sub-affinity :sub/id sub-id}])
+                [(merge record {:view :current-item})])
 
-                  (:skip/user doc)
-                  (for [item (:skip/items doc)
-                        :let [sub (sub-id db (:skip/user doc) item)]
-                        :when sub]
-                    {:view :sub-affinity :sub/id sub})))]
-       (lib.pipe/queue :work.materialized-views/update job))}))
+               (:skip/item record)
+               (when-some [sub-id (-> (biffx/q
+                                       conn
+                                       {:select [[[:coalesce :item.email/sub :sub._id]
+                                                  :sub/id]]
+                                        :from :reclist
+                                        :where [:= :reclist._id (:skip/reclist record)]
+                                        :join [:item [:= :item._id (:skip/item record)]]
+                                        :left-join [:sub [:and
+                                                          [:is-not :item.feed/feed nil]
+                                                          [:= :sub.feed/feed :item.feed/feed]
+                                                          [:= :sub/user :reclist/user]]]
+                                        :limit 1})
+                                      first
+                                      :sub/id)]
+                 [{:view :sub-affinity :sub/id sub-id}])))]
+        [:work.materialized-views/update job])}}))
 
-(def module {:on-tx (fn [ctx tx] (on-tx (assoc ctx ::xt/tx tx)))
+(def module {:on-tx (fn [ctx record] (on-tx (assoc ctx :record record)))
              :queues [{:id        :work.materialized-views/update
                        :consumer  #'update-views
                        :n-threads 2}]})

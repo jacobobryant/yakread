@@ -129,6 +129,16 @@
        :headers {"content-type" "text/html"}
        :body "<h1>Unauthorized</h1>"})))
 
+(defn wrap-internal-error [handler]
+  (fn [{:biff.middleware/keys [on-error] :as ctx}]
+    (try
+      (handler ctx)
+      (catch Throwable t
+        (log/error (ex-info "Exception while handling request"
+                            (select-keys ctx [:uri :params :path-params :session])
+                            t))
+        (on-error (assoc ctx :status 500 :ex t))))))
+
 (def default-site-middleware
   [biff/wrap-site-defaults
    wrap-render-rum

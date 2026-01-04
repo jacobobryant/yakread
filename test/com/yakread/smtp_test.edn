@@ -86,14 +86,14 @@
        {:item/excerpt "the quick brown fox jumps over the lazy dog",
         :item/published-at
         #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
-        :item.email/sub #uuid "00000000-0000-0000-0000-000000000001",
+        :item.email/sub #uuid "00010000-0000-0000-0000-000000000001",
         :item/url "https://example.com/p/example-post",
         :item/length 43,
         :item/content-key #uuid "a32dc9f6-4f1d-f03a-8ce9-70b71df42503",
         :item/lang "en",
         :item/author-name "alice@example.com",
         :item.email/reply-to "alice@example.com",
-        :xt/id #uuid "0000ba3d-c812-a76d-554d-cd2b40b5f04b",
+        :xt/id #uuid "0001ba3d-c812-a76d-554d-cd2b40b5f04b",
         :item/title "subject line",
         :item/ingested-at
         #time/zoned-date-time "2000-01-01T00:00Z[UTC]",

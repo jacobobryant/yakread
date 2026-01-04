@@ -1,13 +1,12 @@
 (ns com.yakread.model.ad
   (:require
    [clojure.string :as str]
-   [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.misc.coll :as wss-coll]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pipeline :as lib.pipe :refer [defpipe]]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.routes :as routes]
    [lambdaisland.uri :as uri]
    [tick.core :as tick]))
@@ -137,33 +136,33 @@
          (< (tick/between last-clicked now :days) 60)
          (<= (if paused 50 500) balance)))})
 
-(defpipe get-stripe-status
+(fx/defmachine get-stripe-status
   :start
-  (fn [{:keys [biff/secret biff.pipe.pathom/output]}]
-    (let [{:ad.credit/keys [ad created-at]} output
+  (fn [{:keys [biff/secret biff.fx/pathom]}]
+    (let [{:ad.credit/keys [ad created-at]} pathom
           {:ad/keys [customer-id]} ad]
-      {:biff.pipe/next [(lib.pipe/http :get
-                                       "https://api.stripe.com/v1/payment_intents"
-                                       {:basic-auth [(secret :stripe/api-key) ""]
-                                        :flatten-nested-form-params true
-                                        :as :json
-                                        :query-params {:limit 100
-                                                       :customer customer-id
-                                                       :created {:gt (-> created-at
-                                                                         tick/instant
-                                                                         inst-ms
-                                                                         (quot 1000)
-                                                                         str)}}})
-                        :end]}))
+      {:biff.fx/http {:method :get
+                      :url "https://api.stripe.com/v1/payment_intents"
+                      :basic-auth [(secret :stripe/api-key) ""]
+                      :flatten-nested-form-params true
+                      :as :json
+                      :query-params {:limit 100
+                                     :customer customer-id
+                                     :created {:gt (-> created-at
+                                                       tick/instant
+                                                       inst-ms
+                                                       (quot 1000)
+                                                       str)}}}
+       :biff.fx/next :end}))
 
   :end
-  (fn [{credit :biff.pipe.pathom/output
-        http-output :biff.pipe.http/output}]
+  (fn [{credit :biff.fx/pathom
+        http :biff.fx/http}]
     (when-some [status (some (fn [{:keys [metadata status]}]
                                (when (= (str (:xt/id credit))
                                         (:charge_id metadata))
                                  status))
-                             (get-in http-output [:body :data]))]
+                             (get-in http [:body :data]))]
       {:ad.credit/stripe-status status})))
 
 (defresolver stripe-status [ctx {:ad.credit/keys [charge-status] :as credit}]
@@ -173,7 +172,7 @@
                 :ad.credit/charge-status]
    ::pco/output [:ad.credit/stripe-status]}
   (when (= charge-status :pending)
-    (get-stripe-status (assoc ctx :biff.pipe.pathom/output credit))))
+    (get-stripe-status (assoc ctx :biff.fx/pathom credit))))
 
 (defresolver pending-charge [{:keys [biff/conn]} {:keys [xt/id]}]
   {::pco/output [{:ad/pending-charge [:xt/id]}]}

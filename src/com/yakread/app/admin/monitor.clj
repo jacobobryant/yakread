@@ -1,14 +1,16 @@
 (ns com.yakread.app.admin.monitor
   (:require
    [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.route :as lib.route :refer [defget]]
    [taoensso.tufte :as tufte]))
 
 (declare page-route)
 
-(defget page-route "/admin/monitor"
+(fx/defroute-pathom page-route "/admin/monitor"
   [:app.shell/app-shell]
+
+  :get
   (fn [{:keys [com.yakread/pstats]} {:keys [app.shell/app-shell]}]
     (let [days (take 7 (iterate #(.minusDays % 1) (java.time.LocalDate/now)))
           pstats (keep (comp @pstats str) days)

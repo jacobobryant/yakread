@@ -5,7 +5,7 @@
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.item :as lib.item]
    [com.yakread.lib.middleware :as lib.middle]
-   [com.yakread.lib.route :refer [defget defpost href hx-redirect]]
+   [com.yakread.lib.route :refer [href hx-redirect]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 

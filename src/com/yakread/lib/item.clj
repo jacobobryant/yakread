@@ -109,6 +109,7 @@
         :on-success
         (fn [{:keys [session biff/conn biff/now]} {:item/keys [id]}]
           (merge {:biff.fx/tx
+                  ;; TODO switch to :biff/upsert
                   (biffs/upsert conn
                                 :user-item
                                 {:user-item/user (:uid session)

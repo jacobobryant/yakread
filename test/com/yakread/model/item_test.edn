@@ -147,20 +147,21 @@
     {:user/history-items
      [{:xt/id "item1", :item/user-item {:xt/id "user-item1"}}]}}}
   _
-  {:doc "sub",
+  {:doc "feed-sub",
    :eval
    (t/with-node
     [node
      {:sub
       [{:xt/id "sub1", :sub/user "user1", :sub.feed/feed "feed1"}
        {:xt/id "sub2", :sub/user "user1", :sub.feed/feed "feed2"}]}]
-    (sub
+    (feed-sub
      {:biff/conn node, :session {:uid "user1"}}
-     [{:item.email/sub {:xt/id "sub3"}}
-      {:item.feed/feed {:xt/id "feed1"}}
-      {}])),
-   :result
-   [{:item/sub {:xt/id "sub3"}} {:item/sub {:xt/id "sub1"}} {}]}
+     [{:item.feed/feed {:xt/id "feed1"}}])),
+   :result [{:item/sub {:xt/id "sub1"}}]}
+  _
+  {:doc "email-sub",
+   :eval (email-sub {:item.email/sub {:xt/id "sub3"}}),
+   :result {:item/sub {:xt/id "sub3"}}}
   _
   {:doc "digest-sends",
    :eval

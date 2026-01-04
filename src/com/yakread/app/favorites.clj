@@ -3,7 +3,7 @@
    [com.wsscode.pathom3.connect.operation :as pco :refer [?]]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.mid]
-   [com.yakread.lib.route :as lib.route :refer [defget href]]
+   [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
    [com.yakread.routes :as routes]))
 

@@ -26,24 +26,25 @@
        :reclist/created-at
        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
        :reclist/clicked
-       #{#uuid "00000000-0000-0000-0000-000000000001"},
+       #{#uuid "00010000-0000-0000-0000-000000000001"},
        :xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be"}]
      [:biff/upsert
       :skip
       [:skip/reclist :skip/item]
       {:skip/reclist #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
-       :skip/item #uuid "00000000-0000-0000-0000-000000000002",
+       :skip/item #uuid "00020000-0000-0000-0000-000000000002",
        :xt/id #uuid "0000c9f6-4f1d-f03a-8ce9-70b71df42503"}
       {:skip/reclist #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be",
-       :skip/item #uuid "00000000-0000-0000-0000-000000000003",
+       :skip/item #uuid "00030000-0000-0000-0000-000000000003",
        :xt/id #uuid "0000ba3d-c812-a76d-554d-cd2b40b5f04b"}]
      [:biff/upsert
       :user-item
       [:user-item/user :user-item/item]
       {:user-item/user #uuid "00000000-0000-0000-0000-000000000000",
-       :user-item/item #uuid "00000000-0000-0000-0000-000000000001",
+       :user-item/item #uuid "00010000-0000-0000-0000-000000000001",
        :user-item/viewed-at
-       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}])}}
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :xt/id #uuid "0000c222-9cef-e94d-fc1e-932efb9a0f58"}])}}
   _
   {:doc "record-item-click with existing skips",
    :eval
@@ -76,22 +77,23 @@
     ([:biff/upsert
       :reclist
       [:reclist/user :reclist/created-at]
-      {:reclist/user #uuid "00000000-0000-0000-0000-000000000005",
+      {:reclist/user #uuid "00050000-0000-0000-0000-000000000005",
        :reclist/created-at
        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
        :reclist/clicked
-       #{#uuid "00000000-0000-0000-0000-000000000001"
-         #uuid "00000000-0000-0000-0000-000000000003"
-         #uuid "00000000-0000-0000-0000-000000000004"},
+       #{#uuid "00010000-0000-0000-0000-000000000001"
+         #uuid "00030000-0000-0000-0000-000000000003"
+         #uuid "00040000-0000-0000-0000-000000000004"},
        :xt/id #uuid "00000000-0000-0000-0000-000000000000"}]
      [:delete :skip "skip2"]
      [:biff/upsert
       :user-item
       [:user-item/user :user-item/item]
-      {:user-item/user #uuid "00000000-0000-0000-0000-000000000005",
-       :user-item/item #uuid "00000000-0000-0000-0000-000000000003",
+      {:user-item/user #uuid "00050000-0000-0000-0000-000000000005",
+       :user-item/item #uuid "00030000-0000-0000-0000-000000000003",
        :user-item/viewed-at
-       #time/zoned-date-time "2000-01-01T00:00Z[UTC]"}])}}
+       #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+       :xt/id #uuid "0005b45f-d4d9-5138-3d93-cb799b3970be"}])}}
   _
   {:doc "record-ad-click",
    :eval
@@ -118,13 +120,13 @@
        :reclist/created-at
        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
        :reclist/clicked
-       #{#uuid "00000000-0000-0000-0000-000000000001"},
+       #{#uuid "00010000-0000-0000-0000-000000000001"},
        :xt/id #uuid "0000b45f-d4d9-5138-3d93-cb799b3970be"}]
      [:biff/upsert
       :ad-click
       [:ad.click/user :ad.click/ad]
       {:ad.click/user #uuid "00000000-0000-0000-0000-000000000000",
-       :ad.click/ad #uuid "00000000-0000-0000-0000-000000000001",
+       :ad.click/ad #uuid "00010000-0000-0000-0000-000000000001",
        :ad.click/created-at
        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
        :ad.click/cost 50,
