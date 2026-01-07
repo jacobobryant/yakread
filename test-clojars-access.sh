@@ -15,6 +15,7 @@ clj --version
 echo ""
 
 # Test 2: Check network access to Clojars
+# Note: clojars.org/repo redirects to repo.clojars.org (both domains are allowlisted)
 echo "2. Testing network access to clojars.org..."
 if curl -s -I https://clojars.org/repo | head -1 | grep -qE "200|302"; then
     echo "   ✓ clojars.org is accessible"

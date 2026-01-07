@@ -54,9 +54,9 @@ The Clojure CLI tools were installed following the approach in `server-setup.sh`
 ## Network Allowlist Requirements
 
 The following domains need to be accessible:
-- ✅ `repo.clojars.org` - Clojars Maven repository
-- ✅ `clojars.org` - Clojars website/redirects
+- ✅ `clojars.org` - Clojars repository (redirects to repo.clojars.org)
+- ✅ `repo.clojars.org` - Clojars Maven repository backend
 - ✅ `repo1.maven.org` - Maven Central
 - ✅ `github.com` - For git dependencies
 
-All required domains are accessible and working correctly.
+Note: The project configuration uses `https://clojars.org/repo` which automatically redirects to `https://repo.clojars.org`. Both domains are in the allowlist and working correctly.
