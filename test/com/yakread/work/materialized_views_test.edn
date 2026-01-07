@@ -2,4 +2,51 @@
  [[com.yakread.lib.test :as t]
   [clojure.data.generators :as gen]
   [com.yakread.work.materialized-views :refer :all]],
- :tests [{:eval (+ 1 1), :result 2} _]}
+ :tests
+ [{:eval (update-views {:biff/job {:view :sub-affinity}} :start),
+   :result {:biff.fx/next :sub-affinity}}
+  _
+  {:eval (update-views {:biff/job {:sub/id "abc123"}} :sub-affinity),
+   :result
+   {:biff.fx/pathom
+    {:entity {:sub/id "abc123"},
+     :query
+     [:sub/id
+      :sub/affinity-low*
+      :sub/affinity-high*
+      {(:sub/mv
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [(:mv.sub/affinity-low
+         {:com.wsscode.pathom3.connect.operation/optional? true})
+        (:mv.sub/affinity-high
+         {:com.wsscode.pathom3.connect.operation/optional? true})]}]},
+    :biff.fx/next :sub-affinity-update}}
+  _
+  {:eval
+   (update-views
+    {:biff.fx/pathom
+     {:sub/id "abc123",
+      :sub/affinity-low* 0.2,
+      :sub/affinity-high* 0.5,
+      :sub/mv {:mv.sub/affinity-low 0.2, :mv.sub/affinity-high 0.5}}}
+    :sub-affinity-update),
+   :result nil}
+  _
+  {:eval
+   (update-views
+    {:biff.fx/pathom
+     {:sub/id "abc123",
+      :sub/affinity-low* 0.2,
+      :sub/affinity-high* 0.5,
+      :sub/mv {:mv.sub/affinity-low 0.2, :mv.sub/affinity-high 0.6}}}
+    :sub-affinity-update),
+   :result
+   {:biff.fx/tx
+    [[:biff/upsert
+      :mv-sub
+      [:mv.sub/sub]
+      {:xt/id #uuid "abc1b45f-d4d9-5138-3d93-cb799b3970be",
+       :mv.sub/sub "abc123",
+       :mv.sub/affinity-low 0.2,
+       :mv.sub/affinity-high 0.5}]]}}
+  _]}
