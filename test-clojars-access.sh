@@ -16,7 +16,7 @@ echo ""
 
 # Test 2: Check network access to Clojars
 echo "2. Testing network access to clojars.org..."
-if curl -s -I https://repo.clojars.org | head -1 | grep -q "200"; then
+if curl -s -I https://clojars.org/repo | head -1 | grep -qE "200|302"; then
     echo "   ✓ clojars.org is accessible"
 else
     echo "   ERROR: Cannot access clojars.org"
@@ -40,8 +40,8 @@ echo "4. Testing fresh download from Clojars..."
 # Create a temporary deps.edn with a Clojars-only dependency
 TEST_DEP_DIR=$(mktemp -d)
 cat > "$TEST_DEP_DIR/deps.edn" << 'EOF'
-{:deps {metosin/malli {:mvn/version "0.16.3"}}}
-:mvn/repos {"clojars" {:url "https://repo.clojars.org/"}}
+{:deps {metosin/malli {:mvn/version "0.16.3"}}
+ :mvn/repos {"clojars" {:url "https://clojars.org/repo"}}}
 EOF
 
 cd "$TEST_DEP_DIR"
@@ -61,12 +61,12 @@ echo ""
 # Test 5: Verify Clojars dependencies in project
 echo "5. Checking project dependencies from Clojars..."
 cd "$(dirname "$0")"
-# List some known Clojars dependencies from deps.edn
-CLOJARS_DEPS=$(grep -A 1 "clojars" deps.edn | head -5 | sed 's/^/   /')
+# List the Clojars repository configuration from deps.edn
+CLOJARS_CONFIG=$(grep -A 1 '"clojars".*url' deps.edn | sed 's/^/   /')
 if clj -Spath 2>&1 | grep -q ".m2/repository"; then
     echo "   ✓ Project dependencies resolved (includes Clojars packages)"
-    echo "   Example Clojars configuration from deps.edn:"
-    echo "$CLOJARS_DEPS"
+    echo "   Clojars repository configuration from deps.edn:"
+    echo "$CLOJARS_CONFIG"
 fi
 echo ""
 
