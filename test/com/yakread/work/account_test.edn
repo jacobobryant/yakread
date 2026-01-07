@@ -77,4 +77,82 @@
     {:template :export,
      :to "hello@example.com",
      :download-url "example.com"}}}
+  _
+  {:doc "delete-account: start fetches user data via pathom"
+   :eval (delete-account {:biff/job {:user/id "user123"}} :start)}
+  _
+  {:doc "delete-account: delete with user customer-id and ad customer-id"
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123"
+      :user/customer-id "cus_user123"
+      :user/email-username "testuser"
+      :user/subscriptions [{:xt/id "sub1" :sub.feed/feed "feed1"}
+                           {:xt/id "sub2" :sub.feed/feed "feed2"}]
+      :user/ad {:xt/id "ad1" :ad/customer-id "cus_ad123"}}
+     :biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+    :delete)}
+  _
+  {:doc "delete-account: delete without customer-ids or ad"
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123"
+      :user/subscriptions []}
+     :biff/secret (fn [k] nil)}
+    :delete)}
+  _
+  {:doc "delete-account: delete with email-username records hash"
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123"
+      :user/email-username "testuser@example.com"
+      :user/subscriptions []}
+     :biff/secret (fn [k] nil)}
+    :delete)}
+  _
+  {:doc "delete-account: delete-email-batch with no email-ids returns nil"
+   :eval
+   (t/with-node
+    [node {}]
+    (delete-account
+     {:biff/conn node
+      :biff/job {:user/id "user123"}
+      :session {:uid "user123"}
+      :com.yakread.work.account/email-ids []}
+     :delete-email-batch))}
+  _
+  {:doc "delete-account: delete-email-batch processes batch of emails"
+   :eval
+   (t/with-node
+    [node
+     {:item [{:xt/id "item1"
+              :item/content-key #uuid "00000000-0000-0000-0000-000000000001"
+              :item.email/raw-content-key #uuid "00000000-0000-0000-0000-000000000002"}
+             {:xt/id "item2"
+              :item/content-key #uuid "00000000-0000-0000-0000-000000000003"}
+             {:xt/id "item3"
+              :item.email/raw-content-key #uuid "00000000-0000-0000-0000-000000000004"}]}]
+    (delete-account
+     {:biff/conn node
+      :biff/job {:user/id "user123"}
+      :session {:uid "user123"}
+      :com.yakread.work.account/email-ids ["item1" "item2" "item3"]}
+     :delete-email-batch))}
+  _
+  {:doc "delete-account: delete-email-batch with more than 500 items continues to next batch"
+   :eval
+   (t/with-node
+    [node
+     {:item [{:xt/id "item1"
+              :item/content-key #uuid "00000000-0000-0000-0000-000000000001"}]}]
+    (let [email-ids (into ["item1"] (map #(str "item" %) (range 2 502)))]
+      (delete-account
+       {:biff/conn node
+        :biff/job {:user/id "user123"}
+        :session {:uid "user123"}
+        :com.yakread.work.account/email-ids email-ids}
+       :delete-email-batch)))}
   _]}

@@ -1,7 +1,8 @@
 {:require
  [[com.yakread.lib.test :as t]
   [clojure.data.generators :as gen]
-  [com.yakread.work.materialized-views :refer :all]],
+  [com.yakread.work.materialized-views :refer :all]
+  [tick.core :as tick]],
  :tests
  [{:eval (update-views {:biff/job {:view :sub-affinity}} :start),
    :result {:biff.fx/next :sub-affinity}}
@@ -49,4 +50,134 @@
        :mv.sub/sub "abc123",
        :mv.sub/affinity-low 0.2,
        :mv.sub/affinity-high 0.5}]]}}
+  _
+  {:doc "current-item: set current item when no existing current item"
+   :eval
+   (t/with-node
+    [node {}]
+    (update-views
+     {:biff/conn node
+      :biff/job {:user-item/user "user1"
+                 :user-item/item "item1"
+                 :user-item/viewed-at (t/zdt 2000)}}
+     :current-item))}
+  _
+  {:doc "current-item: update current item when new item has later viewed-at"
+   :eval
+   (t/with-node
+    [node
+     {:mv-user [{:xt/id "mv-user1"
+                 :mv.user/user "user1"
+                 :mv.user/current-item "item1"}]
+      :user-item [{:xt/id "user-item1"
+                   :user-item/item "item1"
+                   :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node
+      :biff/job {:user-item/user "user1"
+                 :user-item/item "item2"
+                 :user-item/viewed-at (t/zdt 2001)}}
+     :current-item))}
+  _
+  {:doc "current-item: do not update when new item has earlier viewed-at"
+   :eval
+   (t/with-node
+    [node
+     {:mv-user [{:xt/id "mv-user1"
+                 :mv.user/user "user1"
+                 :mv.user/current-item "item1"}]
+      :user-item [{:xt/id "user-item1"
+                   :user-item/item "item1"
+                   :user-item/viewed-at (t/zdt 2001)}]}]
+    (update-views
+     {:biff/conn node
+      :biff/job {:user-item/user "user1"
+                 :user-item/item "item2"
+                 :user-item/viewed-at (t/zdt 2000)}}
+     :current-item))}
+  _
+  {:doc "current-item: remove current item when viewed-at is nil and item matches"
+   :eval
+   (t/with-node
+    [node
+     {:mv-user [{:xt/id "mv-user1"
+                 :mv.user/user "user1"
+                 :mv.user/current-item "item1"}]
+      :user-item [{:xt/id "user-item1"
+                   :user-item/item "item1"
+                   :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node
+      :biff/job {:user-item/user "user1"
+                 :user-item/item "item1"
+                 :user-item/viewed-at nil}}
+     :current-item))}
+  _
+  {:doc "current-item: do not remove when viewed-at is nil but item doesn't match"
+   :eval
+   (t/with-node
+    [node
+     {:mv-user [{:xt/id "mv-user1"
+                 :mv.user/user "user1"
+                 :mv.user/current-item "item1"}]
+      :user-item [{:xt/id "user-item1"
+                   :user-item/item "item1"
+                   :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node
+      :biff/job {:user-item/user "user1"
+                 :user-item/item "item2"
+                 :user-item/viewed-at nil}}
+     :current-item))}
+  _
+  {:doc "on-tx: user-item record generates sub-affinity and current-item jobs"
+   :eval
+   (t/with-node
+    [node
+     {:item [{:xt/id "item1"
+              :item.feed/feed "feed1"}]
+      :sub [{:xt/id "sub1"
+             :sub/user "user1"
+             :sub.feed/feed "feed1"}]}]
+    (on-tx
+     {:biff/conn node
+      :record {:user-item/user "user1"
+               :user-item/item "item1"
+               :user-item/viewed-at (t/zdt 2000)}}))}
+  _
+  {:doc "on-tx: user-item with email item generates sub-affinity and current-item jobs"
+   :eval
+   (t/with-node
+    [node
+     {:item [{:xt/id "item1"
+              :item.email/sub "email-sub1"}]}]
+    (on-tx
+     {:biff/conn node
+      :record {:user-item/user "user1"
+               :user-item/item "item1"
+               :user-item/viewed-at (t/zdt 2000)}}))}
+  _
+  {:doc "on-tx: skip record generates sub-affinity job"
+   :eval
+   (t/with-node
+    [node
+     {:reclist [{:xt/id "reclist1"
+                 :reclist/user "user1"}]
+      :item [{:xt/id "item1"
+              :item.feed/feed "feed1"}]
+      :sub [{:xt/id "sub1"
+             :sub/user "user1"
+             :sub.feed/feed "feed1"}]}]
+    (on-tx
+     {:biff/conn node
+      :record {:skip/item "item1"
+               :skip/reclist "reclist1"}}))}
+  _
+  {:doc "on-tx: unrelated record generates no jobs"
+   :eval
+   (t/with-node
+    [node {}]
+    (on-tx
+     {:biff/conn node
+      :record {:some/other-record "value"}}))}
   _]}
