@@ -41,19 +41,71 @@
                        :definition-2 (m2 conflicting-attr)})))
     (merge m1 m2)))
 
+(defn table-ast? [ast]
+  (and (= :map (:type ast))
+       (contains? (:keys ast) :xt/id)))
+
+(defn deref-ast [schema malli-opts]
+  (some-> (biff/catchall (malli/deref-recursive schema malli-opts))
+          malli/ast))
+
+(defn table-asts [schema malli-opts]
+  (->> (deref-ast schema malli-opts)
+       (tree-seq (constantly true) :children)
+       (filterv table-ast?)))
+
+;; rename to column info, or refactor to be more general
 (defn schema-info [malli-opts]
   (into {}
         (keep (fn [schema-k]
-                (let [attrs (volatile! {})]
-                  (some-> (try (malli/deref-recursive schema-k malli-opts) (catch Exception _))
-                          (malli/walk (fn [schema _ _ _]
-                                        (let [ast (malli/ast schema)]
-                                          (when (and (= (:type ast) :map)
-                                                     (contains? (:keys ast) :xt/id))
-                                            (vswap! attrs attr-union (:keys ast)))))))
-                  (when (not-empty @attrs)
-                    [schema-k @attrs]))))
+                (let [attrs (->> (table-asts schema-k malli-opts)
+                                 (mapv :keys)
+                                 (reduce attr-union {}))]
+                  (when (not-empty attrs)
+                    [schema-k attrs]))))
         (keys (malr/schemas (:registry malli-opts)))))
+
+(def table-properties
+  (memoize
+   (fn [table malli-opts]
+     (->> (table-asts table malli-opts)
+          ;; TODO maybe check that certain properties are same for all asts
+          first
+          :properties))))
+
+(comment
+
+  (time (table-properties :item com.yakread/malli-opts))
+
+  (time
+   (let [malli-opts com.yakread/malli-opts
+        schema-k :item
+        ast (malli/ast (malli/deref-recursive schema-k malli-opts))
+        ]
+    (->> (biff/catchall (malli/ast (malli/deref-recursive schema-k malli-opts)))
+         (tree-seq (constantly true) :children)
+         (some (fn [ast]
+                 (when (and (= :map (:type ast))
+                            (contains? (:keys ast) :xt/id))
+                   (:properties ast)))))
+
+    #_(->> (keys (malr/schemas (:registry malli-opts)))
+         (mapcat (fn [schema-k]
+                   (when-some [ast (biff/catchall (malli/ast (malli/deref-recursive
+                                                              schema-k malli-opts)))]
+                     (tree-seq (constantly true) :children ast))))
+         (keep :properties)
+         (filterv :biff/table)
+         )
+    ))
+
+  (->> (schema-info com.yakread/malli-opts)
+       :item
+       )
+
+  (malli/ast (malli/deref-recursive :item com.yakread/malli-opts))
+
+  )
 
 (defn field-asts [malli-opts]
   (apply merge (vals (schema-info malli-opts))))
@@ -298,3 +350,6 @@
   {:select (mapv (fn [[k query]]
                    [[:nest_many query] k])
                  k->query)})
+
+(defn gen-uuid [prefix uuid]
+  (biffx/prefix-uuid prefix (gen/uuid)))

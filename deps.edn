@@ -1,9 +1,7 @@
 {:paths ["src" "resources" "target/resources" "target/classes"]
  :deps {com.biffweb/biff                    {:git/url "https://github.com/jacobobryant/biff"
-                                             ;; indexes branch
-                                             ;;:git/sha "7836079fc64a6334ea5a43e5e92bcbd7faa1d300"
-                                             ;; xtdb2 branch
-                                             :git/sha "cbc0be34393813ccdf1b15711b416352135025ff"
+                                             :git/sha "ea2657218deb72ff39ec6ec331c3eebde4c69ce3"
+                                             ;:local/root "/home/jacob/dev/biff"
                                              :exclusions [com.xtdb/xtdb-core
                                                           com.xtdb/xtdb-jdbc
                                                           com.xtdb/xtdb-rocksdb

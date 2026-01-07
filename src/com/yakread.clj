@@ -32,8 +32,7 @@
    [taoensso.telemere :as tel]
    [taoensso.telemere.tools-logging :as tel.tl]
    [tick.core :as tick]
-   [time-literals.read-write :as time-literals] ;[com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
-)
+   [time-literals.read-write :as time-literals])
   (:gen-class))
 
 (def modules
@@ -72,7 +71,9 @@
   (when-not (:clojure.tools.namespace.reload/error (biff/eval-files! sys))
     (generate-assets! sys)
     ;(test/run-all-tests #"com.yakread.*-test")
-    (time ((requiring-resolve 'com.yakread.lib.test/run-examples!)))
+    (time ((requiring-resolve 'com.yakread.lib.test/run-examples!)
+           {:ext "materialized_views_test.edn"}
+           ))
     (log/info :done)))
 
 (def malli-opts
