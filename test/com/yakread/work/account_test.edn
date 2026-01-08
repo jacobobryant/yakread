@@ -112,7 +112,7 @@
        {:xt/id "sub2", :sub.feed/feed nil}],
       :user/ad {:xt/id "ad1", :ad/customer-id "cus_ad123"},
       :user/email-username "user@example.com"},
-     :biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+     :biff/secret {:stripe/api-key "sk_test_123"}}
     :delete),
    :result
    [{:biff.fx/http
@@ -146,7 +146,7 @@
       :user/subscriptions [],
       :user/ad nil,
       :user/email-username nil},
-     :biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+     :biff/secret {:stripe/api-key "sk_test_123"}}
     :delete),
    :result
    [{:biff.fx/http
@@ -167,7 +167,7 @@
       :user/subscriptions [],
       :user/ad nil,
       :user/email-username nil},
-     :biff/secret (fn [k] nil)}
+     :biff/secret {}}
     :delete),
    :result
    [{:biff.fx/http ()}
@@ -198,6 +198,47 @@
       :biff/job {:user/id (t/uuid 10)},
       :session {:uid (t/uuid 10)},
       :com.yakread.work.account/email-ids [(t/uuid 2) (t/uuid 3)]}
+     :delete-email-batch)),
+   :result
+   [{:biff.fx/s3
+     ({:key "content-key-1",
+       :config-ns yakread.s3.content,
+       :method "DELETE"}
+      {:key "raw-key-1",
+       :config-ns yakread.s3.emails,
+       :method "DELETE"}
+      {:key "content-key-2",
+       :config-ns yakread.s3.content,
+       :method "DELETE"})}
+    {:biff.fx/tx
+     [[:erase-docs
+       :item
+       #uuid "00020000-0000-0000-0000-000000000002"
+       #uuid "00030000-0000-0000-0000-000000000003"]]}
+    {:biff.fx/next :delete-email-batch,
+     :com.yakread.work.account/email-ids ()}]}
+  _
+  {:doc
+   "delete-account: delete-email-batch queries email items from SQL when email-ids not set",
+   :eval
+   (t/with-node
+    [node
+     {:sub
+      [{:xt/id (t/uuid 1),
+        :sub/user (t/uuid 10),
+        :sub.email/from "sender@example.com"}],
+      :item
+      [{:xt/id (t/uuid 2),
+        :item.email/sub (t/uuid 1),
+        :item/content-key "content-key-1",
+        :item.email/raw-content-key "raw-key-1"}
+       {:xt/id (t/uuid 3),
+        :item.email/sub (t/uuid 1),
+        :item/content-key "content-key-2"}]}]
+    (delete-account
+     {:biff/conn node,
+      :biff/job {:user/id (t/uuid 10)},
+      :session {:uid (t/uuid 10)}}
      :delete-email-batch)),
    :result
    [{:biff.fx/s3

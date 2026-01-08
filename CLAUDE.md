@@ -143,6 +143,18 @@ Test each state function independently:
                :where [:= :field value]})
 ```
 
+### Mocking Secrets in Tests
+
+Use a map for `:biff/secret` instead of a function - maps implement `IFn` in Clojure:
+
+```clojure
+;; Correct - use map
+{:biff/secret {:stripe/api-key "sk_test_123"}}
+
+;; Avoid - function syntax
+{:biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+```
+
 ### Creating UUIDs with prefix-uuid
 
 The `biffx/prefix-uuid` function expects a UUID-like hex string as the first argument:

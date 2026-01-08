@@ -109,9 +109,9 @@
                               :where [:and
                                       [:= :sub/user (:uid session)]
                                       [:is-not :sub.email/from nil]]
-                              :join [:item [:= :item.email/sub :sub._id]]
-                              (biffx/q conn)
-                              (mapv :xt/id)}))
+                              :join [:item [:= :item.email/sub :sub._id]]}
+                             (biffx/q conn)
+                             (mapv :xt/id)))
           batch (when (not-empty email-ids)
                   (biffx/q conn
                            {:select [:xt/id :item/content-key :item.email/raw-content-key]
