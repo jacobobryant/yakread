@@ -13,7 +13,6 @@
    [com.wsscode.pathom3.connect.planner :as-alias pcp]
    [com.wsscode.pathom3.connect.runner :as-alias pcr]
    [com.yakread.lib.core :as lib.core]
-   [com.wsscode.misc.coll :as wss-coll]
    [malli.core :as malli]
    [malli.registry :as malr] ;;[xtdb.api :as xt]
 ))
@@ -72,40 +71,6 @@
           ;; TODO maybe check that certain properties are same for all asts
           first
           :properties))))
-
-(comment
-
-  (time (table-properties :item com.yakread/malli-opts))
-
-  (time
-   (let [malli-opts com.yakread/malli-opts
-        schema-k :item
-        ast (malli/ast (malli/deref-recursive schema-k malli-opts))
-        ]
-    (->> (biff/catchall (malli/ast (malli/deref-recursive schema-k malli-opts)))
-         (tree-seq (constantly true) :children)
-         (some (fn [ast]
-                 (when (and (= :map (:type ast))
-                            (contains? (:keys ast) :xt/id))
-                   (:properties ast)))))
-
-    #_(->> (keys (malr/schemas (:registry malli-opts)))
-         (mapcat (fn [schema-k]
-                   (when-some [ast (biff/catchall (malli/ast (malli/deref-recursive
-                                                              schema-k malli-opts)))]
-                     (tree-seq (constantly true) :children ast))))
-         (keep :properties)
-         (filterv :biff/table)
-         )
-    ))
-
-  (->> (schema-info com.yakread/malli-opts)
-       :item
-       )
-
-  (malli/ast (malli/deref-recursive :item com.yakread/malli-opts))
-
-  )
 
 (defn field-asts [malli-opts]
   (apply merge (vals (schema-info malli-opts))))
@@ -243,8 +208,9 @@
 (defn base64-url-decode [s]
   (.decode (java.util.Base64/getUrlDecoder) s))
 
-(defn signature [secret s]
+(defn signature
   "Returns the hmac-sha1 as base64"
+  [secret s]
   (-> (mac/hash s {:key secret :alg :hmac+sha256})
       base64-url-encode))
 
@@ -351,5 +317,5 @@
                    [[:nest_many query] k])
                  k->query)})
 
-(defn gen-uuid [prefix uuid]
+(defn gen-uuid [prefix]
   (biffx/prefix-uuid prefix (gen/uuid)))
