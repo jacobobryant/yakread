@@ -49,4 +49,260 @@
        :mv.sub/sub "abc123",
        :mv.sub/affinity-low 0.2,
        :mv.sub/affinity-high 0.5}]]}}
+  _
+  {:doc "start with current-item view",
+   :eval (update-views {:biff/job {:view :current-item}} :start),
+   :result {:biff.fx/next :current-item}}
+  _
+  {:doc
+   "current-item: set new current item when no previous item exists",
+   :eval
+   (t/with-node
+    [node {:user [{:xt/id (t/uuid 1)}]}]
+    (update-views
+     {:biff/conn node,
+      :biff/job
+      {:user-item/user (t/uuid 1),
+       :user-item/item (t/uuid 10),
+       :user-item/viewed-at (t/zdt 2000)}}
+     :current-item)),
+   :result
+   {:biff.fx/tx
+    [{:biff/upsert :mv-user,
+      [:mv.user/user]
+      {:xt/id #uuid "0001b45f-d4d9-5138-3d93-cb799b3970be",
+       :mv.user/user #uuid "00010000-0000-0000-0000-000000000001",
+       :mv.user/current-item
+       #uuid "00100000-0000-0000-0000-000000000010"}}]}}
+  _
+  {:doc
+   "current-item: update current item when new item is more recent",
+   :eval
+   (t/with-node
+    [node
+     {:mv-user
+      [{:xt/id (t/uuid 100),
+        :mv.user/user (t/uuid 1),
+        :mv.user/current-item (t/uuid 10)}],
+      :user-item
+      [{:xt/id (t/uuid 200),
+        :user-item/user (t/uuid 1),
+        :user-item/item (t/uuid 10),
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node,
+      :biff/job
+      {:user-item/user (t/uuid 1),
+       :user-item/item (t/uuid 11),
+       :user-item/viewed-at (t/zdt 2001)}}
+     :current-item)),
+   :result
+   {:biff.fx/tx
+    [{:biff/upsert :mv-user,
+      [:mv.user/user]
+      {:xt/id #uuid "0001b45f-d4d9-5138-3d93-cb799b3970be",
+       :mv.user/user #uuid "00010000-0000-0000-0000-000000000001",
+       :mv.user/current-item
+       #uuid "00110000-0000-0000-0000-000000000011"}}]}}
+  _
+  {:doc "current-item: do not update when new item is older",
+   :eval
+   (t/with-node
+    [node
+     {:mv-user
+      [{:xt/id (t/uuid 100),
+        :mv.user/user (t/uuid 1),
+        :mv.user/current-item (t/uuid 10)}],
+      :user-item
+      [{:xt/id (t/uuid 200),
+        :user-item/user (t/uuid 1),
+        :user-item/item (t/uuid 10),
+        :user-item/viewed-at (t/zdt 2001)}]}]
+    (update-views
+     {:biff/conn node,
+      :biff/job
+      {:user-item/user (t/uuid 1),
+       :user-item/item (t/uuid 11),
+       :user-item/viewed-at (t/zdt 2000)}}
+     :current-item)),
+   :result nil}
+  _
+  {:doc
+   "current-item: remove current item when viewed-at is nil and item matches",
+   :eval
+   (t/with-node
+    [node
+     {:mv-user
+      [{:xt/id (t/uuid 100),
+        :mv.user/user (t/uuid 1),
+        :mv.user/current-item (t/uuid 10)}],
+      :user-item
+      [{:xt/id (t/uuid 200),
+        :user-item/user (t/uuid 1),
+        :user-item/item (t/uuid 10),
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node,
+      :biff/job
+      {:user-item/user (t/uuid 1),
+       :user-item/item (t/uuid 10),
+       :user-item/viewed-at nil}}
+     :current-item)),
+   :result
+   {:biff.fx/tx
+    [{:biff/upsert :mv-user,
+      [:mv.user/user]
+      {:xt/id #uuid "0001b45f-d4d9-5138-3d93-cb799b3970be",
+       :mv.user/user #uuid "00010000-0000-0000-0000-000000000001",
+       :mv.user/current-item nil}}]}}
+  _
+  {:doc
+   "current-item: do not remove when viewed-at is nil but item doesn't match",
+   :eval
+   (t/with-node
+    [node
+     {:mv-user
+      [{:xt/id (t/uuid 100),
+        :mv.user/user (t/uuid 1),
+        :mv.user/current-item (t/uuid 10)}],
+      :user-item
+      [{:xt/id (t/uuid 200),
+        :user-item/user (t/uuid 1),
+        :user-item/item (t/uuid 10),
+        :user-item/viewed-at (t/zdt 2000)}]}]
+    (update-views
+     {:biff/conn node,
+      :biff/job
+      {:user-item/user (t/uuid 1),
+       :user-item/item (t/uuid 11),
+       :user-item/viewed-at nil}}
+     :current-item)),
+   :result nil}
+  _
+  {:doc
+   "on-tx: user-item record with email sub queues sub-affinity and current-item",
+   :eval
+   (t/with-node
+    [node {:item [{:xt/id (t/uuid 1), :item.email/sub (t/uuid 100)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record
+      {:user-item/user (t/uuid 10),
+       :user-item/item (t/uuid 1),
+       :user-item/viewed-at (t/zdt 2000)}}
+     :start)),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.materialized-views/update
+       {:view :sub-affinity,
+        :sub/id #uuid "01000000-0000-0000-0000-000000000100"}]
+      [:work.materialized-views/update
+       {:user-item/user #uuid "00100000-0000-0000-0000-000000000010",
+        :user-item/item #uuid "00010000-0000-0000-0000-000000000001",
+        :user-item/viewed-at
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :view :current-item}])}}}
+  _
+  {:doc
+   "on-tx: user-item record with feed sub queues sub-affinity and current-item",
+   :eval
+   (t/with-node
+    [node
+     {:item [{:xt/id (t/uuid 1), :item.feed/feed (t/uuid 50)}],
+      :sub
+      [{:xt/id (t/uuid 100),
+        :sub/user (t/uuid 10),
+        :sub.feed/feed (t/uuid 50)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record
+      {:user-item/user (t/uuid 10),
+       :user-item/item (t/uuid 1),
+       :user-item/viewed-at (t/zdt 2000)}}
+     :start)),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.materialized-views/update
+       {:view :sub-affinity,
+        :sub/id #uuid "01000000-0000-0000-0000-000000000100"}]
+      [:work.materialized-views/update
+       {:user-item/user #uuid "00100000-0000-0000-0000-000000000010",
+        :user-item/item #uuid "00010000-0000-0000-0000-000000000001",
+        :user-item/viewed-at
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :view :current-item}])}}}
+  _
+  {:doc
+   "on-tx: user-item record without sub still queues current-item",
+   :eval
+   (t/with-node
+    [node {:item [{:xt/id (t/uuid 1)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record
+      {:user-item/user (t/uuid 10),
+       :user-item/item (t/uuid 1),
+       :user-item/viewed-at (t/zdt 2000)}}
+     :start)),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.materialized-views/update
+       {:user-item/user #uuid "00100000-0000-0000-0000-000000000010",
+        :user-item/item #uuid "00010000-0000-0000-0000-000000000001",
+        :user-item/viewed-at
+        #time/zoned-date-time "2000-01-01T00:00Z[UTC]",
+        :view :current-item}])}}}
+  _
+  {:doc "on-tx: skip record with email sub queues sub-affinity",
+   :eval
+   (t/with-node
+    [node
+     {:reclist [{:xt/id (t/uuid 1), :reclist/user (t/uuid 10)}],
+      :item [{:xt/id (t/uuid 2), :item.email/sub (t/uuid 100)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record {:skip/item (t/uuid 2), :skip/reclist (t/uuid 1)}}
+     :start)),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.materialized-views/update
+       {:view :sub-affinity,
+        :sub/id #uuid "01000000-0000-0000-0000-000000000100"}])}}}
+  _
+  {:doc "on-tx: skip record with feed sub queues sub-affinity",
+   :eval
+   (t/with-node
+    [node
+     {:reclist [{:xt/id (t/uuid 1), :reclist/user (t/uuid 10)}],
+      :item [{:xt/id (t/uuid 2), :item.feed/feed (t/uuid 50)}],
+      :sub
+      [{:xt/id (t/uuid 100),
+        :sub/user (t/uuid 10),
+        :sub.feed/feed (t/uuid 50)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record {:skip/item (t/uuid 2), :skip/reclist (t/uuid 1)}}
+     :start)),
+   :result
+   {:biff.fx/queue
+    {:jobs
+     ([:work.materialized-views/update
+       {:view :sub-affinity,
+        :sub/id #uuid "01000000-0000-0000-0000-000000000100"}])}}}
+  _
+  {:doc "on-tx: skip record without matching sub returns nil jobs",
+   :eval
+   (t/with-node
+    [node
+     {:reclist [{:xt/id (t/uuid 1), :reclist/user (t/uuid 10)}],
+      :item [{:xt/id (t/uuid 2)}]}]
+    (on-tx
+     {:biff/conn node,
+      :record {:skip/item (t/uuid 2), :skip/reclist (t/uuid 1)}}
+     :start)),
+   :result {:biff.fx/queue {:jobs ()}}}
   _]}
