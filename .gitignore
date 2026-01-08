@@ -24,3 +24,4 @@ resources/public/vendor
 dev/repl.clj
 export/
 dev/repl.clj
+linux-install.sh
