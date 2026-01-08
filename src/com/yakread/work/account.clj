@@ -1,9 +1,9 @@
 (ns com.yakread.work.account
   (:require
    [clojure.java.io :as io]
-   [clojure.data.generators :as gen]
    [clojure.tools.logging :as log]
    [com.biffweb.experimental :as biffx]
+   [com.yakread.util.biff-staging :as biffs]
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
@@ -96,7 +96,7 @@
                        [:delete-docs :sub id])
                      (when email-username
                        [[:put-docs :deleted-user
-                         {:xt/id (gen/uuid)
+                         {:xt/id (biffs/gen-uuid)
                           :deleted-user/email-username-hash (lib.core/sha256 email-username)}]]))
         :biff.fx/next :delete-email-batch}]))
 

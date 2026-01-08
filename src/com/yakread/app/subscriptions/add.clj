@@ -1,18 +1,18 @@
 (ns com.yakread.app.subscriptions.add
   (:require
-   [clojure.data.generators :as gen]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.middle]
    [com.yakread.lib.route :refer [href redirect]]
    [com.yakread.lib.rss :as lib.rss]
    [com.yakread.lib.ui :as ui]
    [com.yakread.lib.user :as lib.user]
-   [com.yakread.lib.core :as lib.core]
-   [com.yakread.routes :as routes]))
+   [com.yakread.routes :as routes]
+   [com.yakread.util.biff-staging :as biffs]))
 
 (let [response (fn [success username]
                  {:status 303
@@ -71,14 +71,14 @@
                                     results)
         new-feed-docs (for [url feed-urls
                             :when (not (url->feed url))]
-                        {:xt/id (gen/uuid)
+                        {:xt/id (biffs/gen-uuid)
                          :feed/url url})
         url->feed (into url->feed
                         (map (juxt :feed/url :xt/id))
                         new-feed-docs)
         new-sub-docs (for [feed (vals url->feed)
                            :when (not (existing-sub-feed-ids feed))]
-                       {:xt/id (biffx/prefix-uuid user-id (gen/uuid))
+                       {:xt/id (biffs/gen-uuid user-id)
                         :sub/user user-id
                         :sub/created-at now
                         :sub.feed/feed feed})]

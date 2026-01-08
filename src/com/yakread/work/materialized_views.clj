@@ -1,6 +1,6 @@
 (ns com.yakread.work.materialized-views
   (:require
-   [clojure.data.generators :as gen]
+   [com.yakread.util.biff-staging :as biffs]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :as pco :refer [?]]
    [com.yakread.lib.fx :as fx]
@@ -28,7 +28,7 @@
       (when (not= [affinity-low* affinity-high*]
                   [(:mv.sub/affinity-low mv) (:mv.sub/affinity-high mv)])
         {:biff.fx/tx [[:biff/upsert :mv-sub [:mv.sub/sub]
-                       {:xt/id (biffx/prefix-uuid id (gen/uuid))
+                       {:xt/id (biffs/gen-uuid id)
                         :mv.sub/sub id
                         :mv.sub/affinity-low  affinity-low*
                         :mv.sub/affinity-high affinity-high*}]]})))
@@ -57,7 +57,7 @@
                              ::remove)]
       (when new-current-item
         {:biff.fx/tx [{:biff/upsert :mv-user [:mv.user/user]
-                       {:xt/id (biffx/prefix-uuid user (gen/uuid))
+                       {:xt/id (biffs/gen-uuid user)
                         :mv.user/user user
                         :mv.user/current-item (when (not= new-current-item ::remove)
                                                 new-current-item)}}]}))))

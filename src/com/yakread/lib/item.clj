@@ -1,18 +1,13 @@
 (ns com.yakread.lib.item
   (:require
    [clojure.set :as set]
-   [clojure.data.generators :as gen]
    [clojure.string :as str]
    [com.biffweb.experimental :as biffx]
-   [com.yakread.util.biff-staging :as biffs]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.route :refer [hx-redirect]]
-   [com.yakread.lib.rss :as lib.rss]))
-
-(def source-id (some-fn :item.feed/feed :item.email/sub))
-
-(def published-at (some-fn :item/published-at :item/ingested-at))
+   [com.yakread.lib.rss :as lib.rss]
+   [com.yakread.util.biff-staging :as biffs]))
 
 (defn add-item-machine* [{:keys [get-url on-error on-success]}]
   {:start
@@ -63,8 +58,8 @@
               [published-time] :article/published-time} (lib.content/pantomime-parse raw-html)
              content (lib.content/normalize content)
              inline-content (<= (count content) 1000)
-             content-key (when-not inline-content (gen/uuid))
-             item-id (biffx/prefix-uuid "0000" (gen/uuid))]
+             content-key (when-not inline-content (biffs/gen-uuid))
+             item-id (biffs/gen-uuid "0000")]
          [(when-not inline-content
             {:biff.fx/s3 {:config-ns 'yakread.s3.content
                           :method  "PUT"
@@ -95,7 +90,7 @@
                             :item/image-url image})]
                          (when (not= url final-url)
                            [:put-docs :redirect
-                            {:xt/id (gen/uuid)
+                            {:xt/id (biffs/gen-uuid)
                              :redirect/url url
                              :redirect/item item-id}])])}
                       (on-success ctx {:item/id item-id :item/url url}))])))})
@@ -114,7 +109,7 @@
                                 :user-item
                                 {:user-item/user (:uid session)
                                  :user-item/item id}
-                                (merge {:xt/id (biffx/prefix-uuid (:uid session) (gen/uuid))
+                                (merge {:xt/id (biffs/gen-uuid (:uid session))
                                         :user-item/favorited-at nil
                                         :user-item/disliked-at nil
                                         :user-item/bookmarked-at nil

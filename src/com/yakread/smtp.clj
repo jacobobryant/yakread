@@ -1,10 +1,10 @@
 (ns com.yakread.smtp
   (:require
-   [clojure.data.generators :as gen]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
+   [com.yakread.util.biff-staging :as biffs]
    [com.yakread.lib.content :as lib.content]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
@@ -66,8 +66,8 @@
       (let [html (-> html
                      lib.content/normalize
                      (str/replace #"#transparent" "transparent"))
-            raw-content-key (gen/uuid)
-            parsed-content-key (gen/uuid)
+            raw-content-key (biffs/gen-uuid)
+            parsed-content-key (biffs/gen-uuid)
             from (some (fn [k]
                          (->> (concat (:from message)
                                       (:reply-to message)
@@ -90,7 +90,7 @@
                       :where [:= :user/email-username (str/lower-case (:username message))]
                       :limit 1})
             new-sub (nil? sub-id)
-            sub-id (or sub-id (biffx/prefix-uuid user-id (gen/uuid)))
+            sub-id (or sub-id (biffs/gen-uuid user-id))
             first-header (fn [header-name]
                            (some lib.smtp/decode-header (get-in message [:headers header-name])))]
         [{:biff.fx/s3 [{:config-ns 'yakread.s3.emails
@@ -108,7 +108,7 @@
          {:biff.fx/tx (concat
                        [[:put-docs :item
                          (lib.core/some-vals
-                          {:xt/id (biffx/prefix-uuid sub-id (gen/uuid))
+                          {:xt/id (biffs/gen-uuid sub-id)
                            :item/ingested-at now
                            :item/title (:subject message)
                            :item/url url

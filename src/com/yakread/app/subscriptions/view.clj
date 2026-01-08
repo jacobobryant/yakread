@@ -1,13 +1,13 @@
 (ns com.yakread.app.subscriptions.view
   (:require
-   [clojure.data.generators :as gen]
-   [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.biffweb.experimental :as biffx]
+   [com.wsscode.pathom3.connect.operation :refer [?]]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.middleware :as lib.middle]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.routes :as routes]))
+   [com.yakread.routes :as routes]
+   [com.yakread.util.biff-staging :as biffs]))
 
 (fx/defroute-pathom mark-read
   [{:session/user [:xt/id]}
@@ -25,7 +25,7 @@
                                               [:is-not :user-item/viewed-at nil]]
                                       :limit 1}))
              {:biff.fx/tx [[:patch-docs :user-item
-                            {:xt/id (biffx/prefix-uuid (:xt/id user) (gen/uuid))
+                            {:xt/id (biffs/gen-uuid (:xt/id user))
                              :user-item/user (:xt/id user)
                              :user-item/item (:xt/id item)
                              :user-item/viewed-at now}]]}))))
@@ -43,7 +43,7 @@
      :biff.fx/tx [(into [:biff/upsert :user-item [:user-item/user :user-item/item]]
                         (for [{:item/keys [id unread]} (:sub/items sub)
                               :when unread]
-                          {:xt/id (biffx/prefix-uuid (:xt/id user) (gen/uuid))
+                          {:xt/id (biffs/gen-uuid (:xt/id user))
                            :user-item/user (:xt/id user)
                            :user-item/item id
                            :user-item/skipped-at now}))]}))

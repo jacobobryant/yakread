@@ -1,17 +1,17 @@
 (ns com.yakread.work.subscription
   (:require
-   [clojure.edn :as edn]
    [clojure.string :as str]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
-   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.content :as lib.content]
+   [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
-   [tick.core :as tick]
+   [com.yakread.util.biff-staging :as biffs]
    [rum.core :as rum]
-   [clojure.data.generators :as gen])
-  (:import [org.jsoup Jsoup]))
+   [tick.core :as tick])
+  (:import
+   [org.jsoup Jsoup]))
 
 (def ^:private epoch (java.time.Instant/ofEpochMilli 0))
 
@@ -130,11 +130,11 @@
                           :when (some? html)]
                       (into {}
                             (remove (comp nil? val))
-                            {:xt/id             (biffx/prefix-uuid feed-id (gen/uuid))
+                            {:xt/id             (biffs/gen-uuid feed-id)
                              :item.feed/feed    feed-id
                              :item/title        title
                              :item/content-key  (when (< 1000 (count html))
-                                                  (gen/uuid))
+                                                  (biffs/gen-uuid))
                              :item/content      html
                              :item/ingested-at  now
                              :item/lang         (lib.content/lang html)

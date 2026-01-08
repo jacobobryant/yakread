@@ -317,5 +317,8 @@
                    [[:nest_many query] k])
                  k->query)})
 
-(defn gen-uuid [prefix]
-  (biffx/prefix-uuid prefix (gen/uuid)))
+(defn gen-uuid
+  ([]
+   (gen/uuid))
+  ([prefix]
+   (biffx/prefix-uuid prefix (gen/uuid))))

@@ -5,7 +5,6 @@
    [com.rpl.specter :as sp]
    [com.wsscode.pathom3.connect.operation :as pco :refer [? defresolver]]
    [com.yakread.lib.core :as lib.core]
-   [com.yakread.lib.pathom :as lib.pathom]
    [edn-query-language.core :as eql]
    [lambdaisland.uri :as uri]
    [com.wsscode.pathom3.interface.eql :as p.eql]

@@ -1,6 +1,5 @@
 (ns com.yakread.app.for-you
   (:require
-   [clojure.data.generators :as gen]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
    [com.wsscode.pathom3.connect.operation :refer [?]]
@@ -41,7 +40,7 @@
                                  (remove (into new-clicked (map :skip/item) existing-skips))
                                  new-skips)
           reclist-id (or (:xt/id reclist)
-                         (biffx/prefix-uuid user-id (gen/uuid)))]
+                         (biffs/gen-uuid user-id))]
       (when (not= old-clicked new-clicked)
         (concat
          [[:biff/upsert :reclist [:reclist/user :reclist/created-at]
@@ -58,7 +57,7 @@
                   (for [item-id create-skips-for]
                     {:skip/reclist reclist-id
                      :skip/item item-id
-                     :xt/id (biffx/prefix-uuid reclist-id (gen/uuid))}))]))))))
+                     :xt/id (biffs/gen-uuid reclist-id)}))]))))))
 
 (fx/defroute record-item-click
   :post
@@ -85,7 +84,7 @@
                           {:user-item/user user-id
                            :user-item/item item-id
                            :user-item/viewed-at now
-                           :xt/id (biffx/prefix-uuid user-id (gen/uuid))}]]))}))))
+                           :xt/id (biffs/gen-uuid user-id)}]]))}))))
 
 (fx/defroute record-ad-click
   :post

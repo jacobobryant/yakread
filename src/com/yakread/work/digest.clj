@@ -1,8 +1,8 @@
 (ns com.yakread.work.digest
   (:require
    [cheshire.core :as cheshire]
-   [clojure.data.generators :as gen]
    [clojure.string :as str]
+   [com.yakread.util.biff-staging :as biffs]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
@@ -82,11 +82,11 @@
   :end
   (fn [{:keys [biff.fx/pathom biff/now] user :biff/job}]
     (when (:digest/payload pathom)
-      (let [digest-id (biffx/prefix-uuid (:xt/id user) (gen/uuid))
+      (let [digest-id (biffs/gen-uuid (:xt/id user))
             digest-items (for [[k kind] [[:user/icymi-recs :icymi]
                                          [:user/digest-discover-recs :discover]]
                                item (get pathom k)]
-                           {:xt/id (biffx/prefix-uuid (:item/id item) (gen/uuid))
+                           {:xt/id (biffs/gen-uuid (:item/id item))
                             :digest-item/digest digest-id
                             :digest-item/item (:item/id item)
                             :digest-item/kind kind})

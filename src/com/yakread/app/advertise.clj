@@ -1,6 +1,5 @@
 (ns com.yakread.app.advertise
   (:require
-   [clojure.data.generators :as gen]
    [clojure.set :as set]
    [clojure.string :as str]
    [com.biffweb :as biff]
@@ -12,7 +11,8 @@
    [com.yakread.lib.middleware :as lib.mid]
    [com.yakread.lib.route :as lib.route :refer [href]]
    [com.yakread.lib.ui :as ui]
-   [com.yakread.routes :as routes]))
+   [com.yakread.routes :as routes]
+   [com.yakread.util.biff-staging :as biffs]))
 
 (declare page-route)
 
@@ -118,7 +118,7 @@
                      {:ad/user (:uid session)
                       :ad/customer-id customer-id
                       :ad/updated-at now
-                      :biff/on-insert {:xt/id (biffx/prefix-uuid (:uid session) (gen/uuid))
+                      :biff/on-insert {:xt/id (biffs/gen-uuid (:uid session))
                                        :ad/approve-state :pending
                                        :ad/balance 0
                                        :ad/recent-cost 0}}]]
@@ -187,7 +187,7 @@
                (merge {:ad/user (:xt/id user)
                        :ad/approve-state state
                        :ad/updated-at now
-                       :biff/on-insert {:xt/id (biffx/prefix-uuid (:xt/id user) (gen/uuid))
+                       :biff/on-insert {:xt/id (biffs/gen-uuid (:xt/id user))
                                         :ad/balance 0
                                         :ad/recent-cost 0}}
                       new-ad)]]]
@@ -199,7 +199,7 @@
 (fx/defroute upload-image
   :post
   (fn [{:keys [biff/base-url yakread.s3.images/edge biff.form/params multipart-params]}]
-    (let [image-id (gen/uuid)
+    (let [image-id (biffs/gen-uuid)
           file-info (get multipart-params "image-file")
           url (str edge "/" image-id)]
       [{:biff.fx/s3 {:config-ns 'yakread.s3.images

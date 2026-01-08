@@ -1,9 +1,9 @@
 (ns com.yakread.work.train
   (:require
-   [clojure.data.generators :as gen]
    [clojure.tools.logging :as log]
    [com.biffweb :as biff]
    [com.biffweb.experimental :as biffx]
+   [com.yakread.util.biff-staging :as biffs]
    [com.yakread.lib.core :as lib.core]
    [com.yakread.lib.fx :as fx]
    [com.yakread.lib.item :as lib.item]
@@ -25,7 +25,7 @@
                         (log/warn "Received status 429 when fetching candidate" url)
                         {:biff.fx/sleep 10000})
                       [{:biff.fx/tx [[:put-docs :item
-                                      {:xt/id (biffx/prefix-uuid "0000" (gen/uuid))
+                                      {:xt/id (biffs/gen-uuid "0000")
                                        :item/url url
                                        :item/ingested-at now
                                        :item/doc-type :item/direct
