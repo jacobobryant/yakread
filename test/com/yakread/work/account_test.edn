@@ -77,4 +77,144 @@
     {:template :export,
      :to "hello@example.com",
      :download-url "example.com"}}}
+  _
+  {:doc "delete-account: start state queries user data",
+   :eval (delete-account {:biff/job {:user/id "user123"}} :start),
+   :result
+   {:biff.fx/pathom
+    {:entity {:user/id "user123"},
+     :query
+     [:user/id
+      (:user/email-username
+       {:com.wsscode.pathom3.connect.operation/optional? true})
+      {(:user/subscriptions
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [:xt/id
+        (:sub.feed/feed
+         {:com.wsscode.pathom3.connect.operation/optional? true})]}
+      {(:user/ad
+        {:com.wsscode.pathom3.connect.operation/optional? true})
+       [:xt/id
+        (:ad/customer-id
+         {:com.wsscode.pathom3.connect.operation/optional? true})]}
+      (:user/customer-id
+       {:com.wsscode.pathom3.connect.operation/optional? true})]},
+    :biff.fx/next :delete}}
+  _
+  {:doc "delete-account: delete state with user and ad customer ids",
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123",
+      :user/customer-id "cus_user123",
+      :user/subscriptions
+      [{:xt/id "sub1", :sub.feed/feed "feed1"}
+       {:xt/id "sub2", :sub.feed/feed nil}],
+      :user/ad {:xt/id "ad1", :ad/customer-id "cus_ad123"},
+      :user/email-username "user@example.com"},
+     :biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+    :delete),
+   :result
+   [{:biff.fx/http
+     ({:method :delete,
+       :url "https://api.stripe.com/v1/customers/cus_user123",
+       :basic-auth ["sk_test_123"],
+       :socket-timeout 10000,
+       :connection-timeout 10000}
+      {:method :delete,
+       :url "https://api.stripe.com/v1/customers/cus_ad123",
+       :basic-auth ["sk_test_123"],
+       :socket-timeout 10000,
+       :connection-timeout 10000})}
+    {:biff.fx/tx
+     ([:erase-docs :user "user123"]
+      [:erase-docs :ad "ad1"]
+      [:delete-docs :sub "sub1"]
+      [:put-docs
+       :deleted-user
+       {:xt/id #uuid "bb20b45f-d4d9-5138-3d93-cb799b3970be",
+        :deleted-user/email-username-hash
+        "b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514"}]),
+     :biff.fx/next :delete-email-batch}]}
+  _
+  {:doc "delete-account: delete state with only user customer id",
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123",
+      :user/customer-id "cus_user123",
+      :user/subscriptions [],
+      :user/ad nil,
+      :user/email-username nil},
+     :biff/secret (fn [k] (when (= k :stripe/api-key) "sk_test_123"))}
+    :delete),
+   :result
+   [{:biff.fx/http
+     ({:method :delete,
+       :url "https://api.stripe.com/v1/customers/cus_user123",
+       :basic-auth ["sk_test_123"],
+       :socket-timeout 10000,
+       :connection-timeout 10000})}
+    {:biff.fx/tx ([:erase-docs :user "user123"]),
+     :biff.fx/next :delete-email-batch}]}
+  _
+  {:doc "delete-account: delete state with no customer ids",
+   :eval
+   (delete-account
+    {:biff.fx/pathom
+     {:user/id "user123",
+      :user/customer-id nil,
+      :user/subscriptions [],
+      :user/ad nil,
+      :user/email-username nil},
+     :biff/secret (fn [k] nil)}
+    :delete),
+   :result
+   [{:biff.fx/http ()}
+    {:biff.fx/tx ([:erase-docs :user "user123"]),
+     :biff.fx/next :delete-email-batch}]}
+  _
+  {:doc "delete-account: delete-email-batch with no emails",
+   :eval
+   (delete-account
+    {:biff/conn nil,
+     :biff/job {:user/id "user123"},
+     :session {:uid "user123"},
+     :com.yakread.work.account/email-ids []}
+    :delete-email-batch),
+   :result nil}
+  _
+  {:doc "delete-account: delete-email-batch with email items",
+   :eval
+   (t/with-node
+    [node
+     {:item
+      [{:xt/id (t/uuid 2),
+        :item/content-key "content-key-1",
+        :item.email/raw-content-key "raw-key-1"}
+       {:xt/id (t/uuid 3), :item/content-key "content-key-2"}]}]
+    (delete-account
+     {:biff/conn node,
+      :biff/job {:user/id (t/uuid 10)},
+      :session {:uid (t/uuid 10)},
+      :com.yakread.work.account/email-ids [(t/uuid 2) (t/uuid 3)]}
+     :delete-email-batch)),
+   :result
+   [{:biff.fx/s3
+     ({:key "content-key-1",
+       :config-ns yakread.s3.content,
+       :method "DELETE"}
+      {:key "raw-key-1",
+       :config-ns yakread.s3.emails,
+       :method "DELETE"}
+      {:key "content-key-2",
+       :config-ns yakread.s3.content,
+       :method "DELETE"})}
+    {:biff.fx/tx
+     [[:erase-docs
+       :item
+       #uuid "00020000-0000-0000-0000-000000000002"
+       #uuid "00030000-0000-0000-0000-000000000003"]]}
+    {:biff.fx/next :delete-email-batch,
+     :com.yakread.work.account/email-ids ()}]}
   _]}
