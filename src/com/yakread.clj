@@ -6,6 +6,7 @@
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.repl :as tn-repl]
    [com.biffweb :as biff]
+   [com.biffweb.migrate.xtdb1 :as migrate.xtdb1]
    [com.wsscode.pathom3.connect.indexes :as pci]
    [com.wsscode.pathom3.connect.planner :as pcp]
    [com.yakread.lib.auth :as lib.auth]
@@ -201,7 +202,11 @@
   (cld/default-init!)
   (time-literals/print-time-literals-clj!)
   (alter-var-root #'gen/*rnd* (constantly (java.util.Random. (inst-ms (java.time.Instant/now)))))
-  (let [{:keys [biff.nrepl/args]} (start)]
+  (let [{:keys [biff.nrepl/args biff.xtdb/node]} (start)]
+    (future
+      (biff/catchall-verbose
+       (migrate.xtdb1/export node "storage/migrate-export")
+       (log/info "done exporting")))
     (apply nrepl-cmd/-main args)))
 
 (defn refresh []
