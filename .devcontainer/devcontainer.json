@@ -21,14 +21,9 @@
     }
   },
 
-  "postCreateCommand": "clojure -P -M:run",
+  "postCreateCommand": "mkdir -p ~/.m2 ~/.gitlibs && clojure -P -M:run",
 
   "remoteUser": "vscode",
-
-  "mounts": [
-    "source=${localWorkspaceFolder}/.m2,target=/home/vscode/.m2,type=bind,consistency=cached",
-    "source=${localWorkspaceFolder}/.gitlibs,target=/home/vscode/.gitlibs,type=bind,consistency=cached"
-  ],
 
   "containerEnv": {
     "BIFF_PROFILE": "dev"

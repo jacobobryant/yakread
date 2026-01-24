@@ -76,14 +76,22 @@ jobs:
       - name: Check repository structure
         run: |
           echo "=== Repository Structure ==="
-          echo "Main source paths:"
-          ls -la src/
+          if [ -d "src/" ]; then
+            echo "Main source paths:"
+            ls -la src/
+          else
+            echo "⚠️  src/ directory not found"
+          fi
           echo ""
-          echo "Resource paths:"
-          ls -la resources/
+          if [ -d "resources/" ]; then
+            echo "Resource paths:"
+            ls -la resources/
+          else
+            echo "⚠️  resources/ directory not found"
+          fi
           echo ""
           echo "Configuration files:"
-          ls -la *.edn
+          ls -la *.edn 2>/dev/null || echo "⚠️  No .edn files found"
 
       - name: Environment summary
         run: |

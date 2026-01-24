@@ -85,7 +85,7 @@ clojure -P -M:run       # Should download all dependencies
 
 To modify the environment:
 1. Update the Java version in the workflow files by changing `JAVA_VERSION`
-2. Modify dependency installation commands in `postCreateCommand`
+2. Modify dependency installation commands in the `postCreateCommand` (in `.devcontainer/devcontainer.json`)
 3. Add additional steps to the workflow files as needed
 
 ## Troubleshooting
