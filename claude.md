@@ -1,5 +1,40 @@
 # Development Notes for Claude/AI Assistants
 
+## Important Guidelines for AI Assistants
+
+### When to Update This Document
+**Always update claude.md** when you receive feedback that would be helpful for future sessions, even if not explicitly asked. This includes:
+- Coding conventions and style preferences
+- Common patterns or anti-patterns
+- Project-specific best practices
+- Frequently encountered issues and their solutions
+
+### Document Maintenance
+**Do not document bugs you've already fixed.** This file should contain:
+- ✅ Current best practices and conventions
+- ✅ How things should be done
+- ✅ Architectural patterns
+- ❌ Historical bugs or issues that have been resolved
+- ❌ Temporary workarounds
+
+## Coding Conventions
+
+### Clojure String Functions
+**Always** require `clojure.string` with the `str` alias, never use it fully qualified:
+
+```clojure
+;; ✅ Correct
+(ns my.namespace
+  (:require [clojure.string :as str]))
+
+(str/blank? some-string)
+
+;; ❌ Incorrect  
+(clojure.string/blank? some-string)
+```
+
+This is a project-wide convention for consistency.
+
 ## Running the App Locally
 
 ### Prerequisites
@@ -58,42 +93,6 @@ The nREPL server starts automatically on port 7888. You can connect to it using:
 
 3. **Evaluate code in running server:**
    Since the file watcher handles most reloads automatically, you typically don't need manual REPL evaluation during development. Just save your files and the watcher will reload them.
-
-### Common Development Issues
-
-#### Issue: Analytics snippet causing 500 error
-**Problem:** Empty string in `ANALYTICS_SNIPPET` config causes Rum rendering error.
-
-**Solution:** The `unsafe` function in `com.yakread.util.biff-staging` now handles empty/nil values:
-```clojure
-(defn unsafe [& html]
-  (let [html-str (apply str html)]
-    (when-not (clojure.string/blank? html-str)
-      {:dangerouslySetInnerHTML {:__html html-str}})))
-```
-
-And in `com.yakread.app.home`, wrap the analytics div conditionally:
-```clojure
-(when-not (str/blank? analytics-snippet)
-  [:div (biff/unsafe analytics-snippet)])
-```
-
-#### Issue: Tailwind CSS version mismatch
-**Problem:** System downloads Tailwind v4 which has breaking changes.
-
-**Solution:** Manually download the correct version (v3.2.4):
-```bash
-curl -L -o bin/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v3.2.4/tailwindcss-linux-x64
-chmod +x bin/tailwindcss
-```
-
-#### Issue: RocksDB lock file error
-**Problem:** Previous server instance didn't shut down cleanly.
-
-**Solution:** 
-```bash
-rm -rf storage/biff-index
-```
 
 ### Configuration
 
