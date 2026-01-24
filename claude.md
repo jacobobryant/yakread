@@ -163,3 +163,59 @@ clj -M:run prod-repl
 - `com.yakread.lib.*` - Shared utilities
 - `com.yakread.ui-components.*` - Reusable UI components (Pathom resolvers returning Hiccup)
 - `com.yakread.work.*` - Background jobs and scheduled tasks
+
+## Seed Data Generation (Future Enhancement)
+
+For testing page load performance with production-like data volumes:
+
+### Data Volumes in Production
+- **User Items**: ~250k records
+- **Items**: ~18m records
+- **Users**: Varies
+
+### Approach for Seed Data
+
+1. **Create seed data generation script** in `dev/seed_data.clj`:
+   ```clojure
+   (ns seed-data
+     (:require [xtdb.api :as xt]
+               [com.yakread :as yakread]))
+   
+   (defn generate-items [n]
+     ;; Generate n item documents
+     )
+   
+   (defn generate-user-items [n]
+     ;; Generate n user-item relationships
+     )
+   ```
+
+2. **Start with smaller data sets** to test:
+   - 1k items, 100 user-items
+   - 10k items, 1k user-items  
+   - 100k items, 10k user-items
+   - Scale up as needed
+
+3. **Monitor disk usage** as XTDB stores data on disk:
+   ```bash
+   watch -n 5 'du -sh storage/'
+   ```
+
+4. **Test page load performance**:
+   - Home page
+   - For You page (recommendation algorithm with real data)
+   - Subscriptions page
+   - Read Later page
+   
+5. **Use tools like `time curl` or browser dev tools** to measure:
+   - Time to first byte (TTFB)
+   - Full page load time
+   - Database query performance
+
+### Disk Space Considerations
+
+- Current environment: 20GB free
+- XTDB storage: ~88MB initially
+- Estimated for 1M items: ~5-10GB (varies with content size)
+- Should be feasible for moderate testing volumes
+
