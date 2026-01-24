@@ -310,7 +310,8 @@
           [:.h-6.grow]
           (ui/footer {:show-recaptcha-message true})
           [:.h-4]]
-         [:div (biff/unsafe analytics-snippet)])))}])
+         (when-not (clojure.string/blank? analytics-snippet)
+           [:div (biff/unsafe analytics-snippet)])))}])
 
 (def link-sent-route
   ["/link-sent"

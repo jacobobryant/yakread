@@ -123,7 +123,9 @@
       base64-url-encode))
 
 (defn unsafe [& html]
-  {:dangerouslySetInnerHTML {:__html (apply str html)}})
+  (let [html-str (apply str html)]
+    (when-not (clojure.string/blank? html-str)
+      {:dangerouslySetInnerHTML {:__html html-str}})))
 
 (defmethod aero/reader 'biff/edn
   [_ _ value]
