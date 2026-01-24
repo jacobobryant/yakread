@@ -1,0 +1,104 @@
+# GitHub Copilot Agent Configuration
+#
+# This file defines the container environment for GitHub Copilot agents
+# working on this repository. The container is provisioned with all
+# necessary dependencies including Java, Clojure CLI, and project dependencies.
+
+name: Copilot Agent Environment
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main, master]
+
+# Container configuration for GitHub agents
+env:
+  JAVA_VERSION: '17'
+  CLOJURE_VERSION: 'latest'
+
+jobs:
+  agent-environment:
+    name: Setup Agent Environment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: 'maven'
+
+      - name: Install Clojure CLI tools
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          cli: ${{ env.CLOJURE_VERSION }}
+
+      - name: Cache Clojure dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.clojure
+          key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-clojure-
+
+      - name: Download all dependencies
+        run: |
+          echo "Downloading dependencies from deps.edn..."
+          clojure -P -M:run
+          echo "Dependencies downloaded successfully"
+
+      - name: Verify environment setup
+        run: |
+          echo "=== Environment Verification ==="
+          echo "Java version:"
+          java -version
+          echo ""
+          echo "Clojure CLI version:"
+          clojure -version
+          echo ""
+          echo "Dependencies cached in:"
+          echo "  ~/.m2/repository (Maven deps)"
+          echo "  ~/.gitlibs (Git deps)"
+          echo ""
+          echo "Environment ready for GitHub agents!"
+
+      - name: Check repository structure
+        run: |
+          echo "=== Repository Structure ==="
+          if [ -d "src/" ]; then
+            echo "Main source paths:"
+            ls -la src/
+          else
+            echo "⚠️  src/ directory not found"
+          fi
+          echo ""
+          if [ -d "resources/" ]; then
+            echo "Resource paths:"
+            ls -la resources/
+          else
+            echo "⚠️  resources/ directory not found"
+          fi
+          echo ""
+          echo "Configuration files:"
+          ls -la *.edn 2>/dev/null || echo "⚠️  No .edn files found"
+
+      - name: Environment summary
+        run: |
+          echo "✅ Container provisioned successfully"
+          echo "✅ Java ${{ env.JAVA_VERSION }} installed"
+          echo "✅ Clojure CLI installed"
+          echo "✅ All deps.edn dependencies cached"
+          echo "✅ Ready for GitHub Copilot agents"
