@@ -3,6 +3,7 @@
    [buddy.core.mac :as mac]
    [clojure.edn :as edn]
    [clojure.java.io :as io]
+   [clojure.string :as str]
    [clojure.tools.logging :as log]
    [clojure.tools.namespace.find :as ns-find]
    [com.biffweb :as biff]
@@ -123,7 +124,9 @@
       base64-url-encode))
 
 (defn unsafe [& html]
-  {:dangerouslySetInnerHTML {:__html (apply str html)}})
+  (let [html-str (apply str html)]
+    (when-not (str/blank? html-str)
+      {:dangerouslySetInnerHTML {:__html html-str}})))
 
 (defmethod aero/reader 'biff/edn
   [_ _ value]
