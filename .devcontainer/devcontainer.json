@@ -1,0 +1,36 @@
+{
+  "name": "Yakread Development Container",
+  "image": "clojure:temurin-17-tools-deps-bookworm",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "username": "vscode",
+      "upgradePackages": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "betterthantomorrow.calva"
+      ]
+    }
+  },
+
+  "postCreateCommand": "clojure -P -M:run",
+
+  "remoteUser": "vscode",
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/.m2,target=/home/vscode/.m2,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.gitlibs,target=/home/vscode/.gitlibs,type=bind,consistency=cached"
+  ],
+
+  "containerEnv": {
+    "BIFF_PROFILE": "dev"
+  }
+}
