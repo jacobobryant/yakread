@@ -1,0 +1,46 @@
+name: Agent Setup
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Clojure tools
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          cli: 'latest'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/deps.edn') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Download dependencies
+        run: clojure -P -M:run
+
+      - name: Verify installation
+        run: |
+          echo "Java version:"
+          java -version
+          echo "Clojure version:"
+          clojure -version
+          echo "Dependencies downloaded successfully"
