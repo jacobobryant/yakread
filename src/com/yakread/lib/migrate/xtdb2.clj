@@ -2,16 +2,17 @@
   (:require
    [clojure.java.io :as io]
    [clojure.set :as set]
+   [clojure.tools.logging :as log]
    [clojure.walk :as walk]
-   [taoensso.nippy :as nippy]
-   [xtdb.api :as xt]
-   [xtdb.node :as xtn]
+   [com.biffweb.experimental :as biffx]
    [malli.core :as m]
    [malli.error :as me]
-   [clojure.tools.logging :as log]
-   [tick.core :as tick]))
+   [taoensso.nippy :as nippy]
+   [tick.core :as tick]
+   [xtdb.api :as xt]
+   [xtdb.node :as xtn]))
 
-(defn files [dir]
+(defn tx-files [dir]
   (->> (io/file dir)
        file-seq
        (filterv #(.isFile %))
@@ -57,13 +58,14 @@
                       new-id])
 
                (not-empty component-ids)
-               (into (for [[table ids] (group-by new-id->table component-ids)]
+               (into (for [[table ids] (group-by new-id->table component-ids)
+                           :when (not-empty ids)]
                        (into [:delete-docs (merge {:from table} valid-from-to)] ids))))}))
 
 (defn handle-put-op [{:keys [convert-doc malli-opts
                              new-id->table old-id->new-id old-id->component-ids
-                             tx-ops]}
-                     {:keys [doc id tx-time valid-from valid-to]}]
+                             tx-ops] :as stuff-a}
+                     {:keys [doc id tx-time valid-from valid-to] :as stuff-b}]
   ;; convert old doc to new docs
   ;; find out if any component entities need to be deleted
   ;; delete docs, put docs
@@ -73,17 +75,16 @@
         {:keys [table new-doc table->component-docs] :as output}
         (convert-doc input)
 
-        _ (doseq [[table docs] (assoc table->component-docs
-                                      table
-                                      new-doc)
+        _ (doseq [[table docs] (cond-> table->component-docs
+                                 table (assoc table [new-doc]))
                   doc docs
-                  :when (not (m/validate table new-doc malli-opts))]
+                  :when (not (m/validate table doc malli-opts))]
             (throw (ex-info "Record doesn't match schema."
                             {:invalid-doc doc
                              :invalid-doc-table table
                              :convert-input input
                              :convert-output output
-                             :explain (me/humanize (m/explain table doc))})))
+                             :explain (me/humanize (m/explain table doc malli-opts))})))
 
         old-component-ids (get old-id->component-ids id #{})
         new-component-ids (into #{}
@@ -99,10 +100,12 @@
     {:tx-ops (vec (concat
                    tx-ops
                    (when (some? new-doc)
-                     [[:put-docs (assoc valid-from-to :into table) doc]])
-                   (for [[table docs] table->component-docs]
+                     [[:put-docs (assoc valid-from-to :into table) new-doc]])
+                   (for [[table docs] table->component-docs
+                         :when (not-empty docs)]
                      (into [:put-docs (assoc valid-from-to :into table)] docs))
-                   (for [[table ids] (group-by new-id->table deleted-component-ids)]
+                   (for [[table ids] (group-by new-id->table deleted-component-ids)
+                         :when (not-empty ids)]
                      (into [:delete-docs (assoc valid-from-to :from table)] ids))))
      :new-id->table (cond-> (or new-id->table {})
                       (some? table)
@@ -124,11 +127,16 @@
     (mapcat normalize-tx $)
     (reduce (fn [state {:keys [op] :as tx-op}]
               (merge state
-                     ((case op
-                        ::xt/put handle-put-op
-                        ::xt/delete handle-delete-op)
-                      (merge opts state)
-                      tx-op)))
+                     (try
+                       ((case op
+                          ::xt/put handle-put-op
+                          ::xt/delete handle-delete-op)
+                        (merge opts state)
+                        tx-op)
+                       (catch Exception e
+                         (throw (ex-info "Error while processing tx operation"
+                                         tx-op
+                                         e))))))
             (assoc opts :tx-ops [])
             $)
     {:new-state (select-keys $ [:new-id->table :old-id->new-id :old-id->component-ids])
@@ -137,11 +145,84 @@
 (def state-file (io/file ".biff-migrate-state"))
 (def tx-ops-file (io/file ".biff-migrate-state-tx-ops"))
 
-(defn import!
+(defn prep-state! [{:keys [dir convert-doc malli-opts dry-run]}]
+  (let [{:keys [latest-state-file state]}
+        (when (and (.exists state-file) (not dry-run))
+          (nippy/thaw-from-file state-file))
+
+        files (drop-while #(<= (parse-long (.getName %))
+                               latest-state-file)
+                          (tx-files dir))
+        last-file (last files)]
+    (reduce (fn [state f]
+              (let [file-index (parse-long (.getName f))
+                    _ (log/info "prep-state!" file-index)
+                    {:keys [new-state]}
+                    (xt2-ops (merge state
+                                    {:convert-doc convert-doc
+                                     :xt1-txes (nippy/thaw-from-file f)
+                                     :malli-opts malli-opts}))]
+                (when (and (or (= 0 (mod file-index 10))
+                               (= f last-file))
+                           (not dry-run))
+                  (log/info "saving state")
+                  (time
+                   (nippy/freeze-to-file state-file
+                                         {:state new-state
+                                          :latest-state-file file-index})))
+                new-state))
+            state
+            files)
+    :done))
+
+(defn tx-op-seq [{:keys [dir convert-doc malli-opts]}]
+  (let [{:keys [state]} (nippy/thaw-from-file state-file)]
+    (for [f (tx-files dir)
+          :let [{:keys [tx-ops]} (xt2-ops (merge state
+                                                 {:convert-doc convert-doc
+                                                  :xt1-txes (nippy/thaw-from-file f)
+                                                  :malli-opts malli-opts}))]
+          tx-op tx-ops]
+      tx-op)))
+
+(defn prep-txes! [{:keys [txes-dir dry-run] :as opts}]
+  ;; TODO make this resumable
+  (when-not dry-run
+    (run! io/delete-file (tx-files txes-dir)))
+  (->> (tx-op-seq opts)
+       (partition-all 10000)
+       (map-indexed vector)
+       (run! (fn [[i tx]]
+               (when-not dry-run
+                 (log/info "prep-txes!" i)
+                 (let [file (io/file txes-dir (str i))]
+                   (io/make-parents file)
+                   (nippy/freeze-to-file file tx)))))))
+
+(defn import! [{:keys [node txes-dir dry-run]}]
+  (let [{:keys [latest-tx-ops-file]} (when (and (.exists tx-ops-file)
+                                                (not dry-run))
+                                       (nippy/thaw-from-file tx-ops-file))]
+    (with-open [conn (.build (.createConnectionBuilder node))]
+      (doseq [f (tx-files txes-dir)
+              :let [file-index (parse-long (.getName f))]
+              :when (or (nil? latest-tx-ops-file)
+                        (< latest-tx-ops-file file-index))
+              :let [_ (log/info "import!" file-index)
+                    tx-ops (nippy/thaw-from-file f)]]
+        (when-not dry-run
+          (->> tx-ops
+               (partition-all 100)
+               (run! (fn [tx]
+                       (xt/submit-tx conn tx))))
+          (nippy/freeze-to-file tx-ops-file {:latest-tx-ops-file file-index}))))
+    :done))
+
+(defn migrate!
   "Imports transactions from XTDB v1.
 
-   node:       an XTDB v2 node
-   dir:        the directory written to by com.biffweb.migrate.xtdb1/export!
+   node:        an XTDB v2 node
+   dir:         the directory written to by com.biffweb.migrate.xtdb1/export!
    convert-doc: a function used to convert an XTDB1 document to one or more
                 XTDB2 documents. The function has the following form:
 
@@ -150,54 +231,21 @@
          :table <keyword>,
          :table->component-docs {<keyword> [{...}, {...}]}}
 
-   Some convertions that convert-doc will likely need to do:
+   Some conversions that convert-doc will likely need to do:
 
    - Update :xt/id to include a prefix as needed
    - Use old-id->new-id to update references/foreign keys to other documents
    - split vector/set values out into separate join table documents, via
      :table->component-docs
    - convert instants to zoned date times"
-  [{:keys [node dir convert-doc malli-opts]}]
-  ;; id->table, id->new-id, id->component-ids
-  (let [{:keys [latest-state-file
-                state]} (when (.exists state-file)
-                          (nippy/thaw-from-file state-file))]
-    (reduce (fn [state* f]
-              (let [file-index (parse-long (.getName f))]
-                (when (or (nil? latest-state-file)
-                          (< latest-state-file file-index))
-                  (log/info "state" file-index)
-                  (let [{:keys [new-state]}
-                        (xt2-ops (merge state
-                                        state*
-                                        {:convert-doc convert-doc
-                                         :xt1-txes (nippy/thaw-from-file f)
-                                         :malli-opts malli-opts}))]
-                    (nippy/freeze-to-file
-                     state-file
-                     (assoc new-state :latest-state-file file-index))
-                    new-state))))
-            {}
-            (files dir)))
-
-  (let [{:keys [latest-tx-ops-file]} (nippy/thaw-from-file tx-ops-file)
-        {:keys [state]} (nippy/thaw-from-file state-file)]
-    (with-open [conn (.build (.createConnectionBuilder node))]
-      (doseq [f (files dir)
-              :let [file-index (parse-long (.getName f))]
-              :when (or (nil? latest-tx-ops-file)
-                        (< latest-tx-ops-file file-index))
-              :let [_ (log/info "tx-ops" file-index)
-                    {:keys [tx-ops]} (xt2-ops (merge state
-                                                     {:convert-doc convert-doc
-                                                      :xt1-txes (nippy/thaw-from-file f)
-                                                      :malli-opts malli-opts}))]]
-        (->> tx-ops
-             (partition-all 1000)
-             (run! #(xt/submit-tx conn %)))
-        (nippy/freeze-to-file tx-ops-file {:latest-tx-ops-file file-index}))))
-
+  [opts]
+  (prep-state! opts)
+  (prep-txes! opts)
+  (import! opts)
   :done)
+
+(defn name-uuid [& strs]
+  (java.util.UUID/nameUUIDFromBytes (.getBytes (apply str strs))))
 
 (def required-attr->table
   {:user/email                       :user
@@ -215,173 +263,164 @@
    :mv.user/user                     :mv-user
    :deleted-user/email-username-hash :deleted-user})
 
-(defn convert-common [doc old-id->new-id]
-  (walk/postwalk
-   (fn [x]
-     (cond
-       (uuid? x) (old-id->new-id x)
-       (tick/instant? x) (tick/in x "UTC")
-       :else x))
-   doc))
+
+(def table->prefixed-by
+  {:sub :sub/user
+   :item (some-fn :item.feed/feed
+                  :item.email/sub
+                  (constantly "0000"))
+   :user-item :user-item/user
+   :digest :digest/user
+   :reclist :skip/user
+   :ad :ad/user
+   :ad-click :ad.click/ad
+   :ad-credit :ad.credit/ad
+   :mv-sub :mv.sub/sub
+   :mv-user :mv.user/user})
+
+(defn convert-common [table doc old-id->new-id]
+  (let [prefix-fn (get table->prefixed-by table)
+        doc (walk/postwalk
+             (fn [x]
+               (cond
+                 (uuid? x) (old-id->new-id x)
+                 (tick/instant? x) (tick/in x "UTC")
+                 :else x))
+             doc)]
+    (cond-> doc
+      prefix-fn (update :xt/id #(biffx/prefix-uuid (prefix-fn doc) %)))))
+
+(defn convert-user {:table :user}
+  [{:user/keys [timezone] :as doc} _]
+  {:new-doc (-> doc
+                (dissoc :user/timezone)
+                (assoc :user/timezone* (str timezone)))})
+
+(defn convert-user-item {:table :user-item}
+  [doc _]
+  {:new-doc (dissoc doc :user-item/position)})
+
+(defn convert-digest {:table :digest}
+  [doc _]
+  (let [digest-items (for [k [:digest/icymi :digest/discover]
+                           item (get doc k)
+                           :let [new-id (name-uuid (:xt/id doc) item k)
+                                 new-id (biffx/prefix-uuid item new-id)]]
+                       {:xt/id new-id
+                        :digest-item/digest (:xt/id doc)
+                        :digest-item/item item
+                        :digest-item/kind (keyword (name k))})]
+    {:new-doc (dissoc doc :digest/icymi :digest/discover)
+     :table->component-docs {:digest-item digest-items}}))
+
+(defn convert-reclist {:table :reclist}
+  [doc _]
+  (let [skips (for [item (:skip/items doc)
+                    :let [new-id (name-uuid (:xt/id doc) item)
+                          new-id (biffx/prefix-uuid (:xt/id doc) new-id)]]
+                {:xt/id new-id
+                 :skip/reclist (:xt/id doc)
+                 :skip/item item})]
+    {:new-doc (-> doc
+                  (set/rename-keys {:skip/user :reclist/user
+                                    :skip/timeline-created-at :reclist/created-at
+                                    :skip/clicked :reclist/clicked})
+                  (dissoc :skip/items))
+     :table->component-docs {:skip skips}}))
+
+(defn convert-ad {:table :ad}
+  [doc _]
+  {:new-doc (cond-> doc
+              (:ad/card-details doc)
+              (update :ad/card-details set/rename-keys {:exp_year :exp-year
+                                                        :exp_month :exp-month}))})
+
+(defn convert-default [doc _]
+  {:new-doc doc})
+
+(def table->convert-doc-fn
+  (into {}
+        (map (juxt (comp :table meta) deref))
+        [#'convert-user
+         #'convert-user-item
+         #'convert-digest
+         #'convert-reclist
+         #'convert-ad]))
 
 (defn yakread-convert-doc [{:keys [old-doc old-id->new-id]}]
   (when-some [table (some required-attr->table (keys old-doc))]
-    {:table table
-     :new-doc (reduce (fn [doc f]
-                        (f doc old-id->new-id))
-                      old-doc
-                      [;; TODO finish
-                       #_(case table
-                         :user ...
-                         :sub ...
-                         :item ...
-                         :feed ...
-                         ...)
-                       convert-common])
-     :table->component-docs nil}))
+    (let [convert-fn (get table->convert-doc-fn table convert-default)]
+      (try
+        (-> (convert-common table old-doc old-id->new-id)
+            (convert-fn old-id->new-id)
+            (assoc :table table))
+        (catch Exception e
+          (throw (ex-info "Error while converting doc"
+                          {:doc old-doc}
+                          e)))))))
+
+(defn clear-import-state! []
+  (doseq [f [state-file tx-ops-file]
+          :when (.exists f)]
+    (io/delete-file f)))
 
 (comment
 
-  (def node (xtn/start-node {}))
+  (def node
+    (xtn/start-node
+     {:log-clusters {:kafka-cluster [:kafka {:bootstrap-servers "localhost:9092"
+                                             ;:properties-map {"max.request.size" "5242880"}
+                                             }]}
+
+
+      :log
+      [:kafka {:cluster :kafka-cluster :topic "xtdb-yakread" :epoch 0}]
+      ;[:local {:path "storage/xtdb2/log"}]
+
+      :storage [:remote
+                {:object-store [:s3 {,,,}]}]
+      :disk-cache {:path "storage/xtdb2/storage-cache"}}))
   (.close node)
-  (io/delete-file state-file)
 
-  (import! {:node node
-            :dir "storage/migrate-export"
-            :doc->table (constantly :stuff)
-            :malli-opts com.yakread/malli-opts
-            })
+  (dissoc (xtdb.api/status node) :metrics)
 
+  (xt/q node "select count(*) from xt.txs where committed = true")
+  100358
+  (xt/q node "select * from xt.txs order by system_time desc limit 3")
+
+
+  (time (xt/q node "select count(*) from user"))
+
+  (require 'com.yakread)
+  (let [opts {:node node
+              :dir "storage/migrate-export"
+              :txes-dir "storage/migrate-export-txes"
+              :convert-doc yakread-convert-doc
+              :malli-opts com.yakread/malli-opts}]
+    #_(prep-state! opts)
+    #_(prep-txes! opts)
+    (import! opts))
+
+  (def e *e)
+
+  (def stuff (-> e ex-cause ex-data))
+
+
+  (inc 3)
   (nippy/thaw-from-file state-file)
 
-  (def xt1-txes (->> (files "../xtdb1/export")
+  (def xt1-txes (->> (tx-files "../xtdb1/export")
                      (mapcat nippy/thaw-from-file)
                      vec))
-  ;; =>
-  '[#:xtdb.api{:tx-id 0,
-               :tx-time #inst "2025-11-11T16:31:07.619-00:00",
-               :tx-ops ([:xtdb.api/put {:value "a", :xt/id 1}])}
-    #:xtdb.api{:tx-id 1,
-               :tx-time #inst "2025-11-11T16:31:07.623-00:00",
-               :tx-ops ([:xtdb.api/put {:value "b", :xt/id 1}])}
-    #:xtdb.api{:tx-id 2,
-               :tx-time #inst "2025-11-11T16:31:07.626-00:00",
-               :tx-ops ([:xtdb.api/delete 1])}
-    #:xtdb.api{:tx-id 3,
-               :tx-time #inst "2025-11-11T16:31:07.630-00:00",
-               :tx-ops
-               ([:xtdb.api/put {:xtdb.api/evicted? true, :xt/id nil}])}
-    #:xtdb.api{:tx-id 4,
-               :tx-time #inst "2025-11-11T16:31:07.632-00:00",
-               :tx-ops ([:xtdb.api/evict nil])}
-    #:xtdb.api{:tx-id 5,
-               :tx-time #inst "2025-11-11T16:31:07.637-00:00",
-               :tx-ops
-               ([:xtdb.api/put
-                 #:xt{:fn
-                      (fn
-                        [ctx_ & args_]
-                        [[:xtdb.api/put {:xt/id 3, :value "a"}]
-                         [:xtdb.api/put {:xt/id 4, :value "b"}]]),
-                      :id :my-tx-fn}])}
-    #:xtdb.api{:tx-id 6,
-               :tx-time #inst "2025-11-11T16:31:07.642-00:00",
-               :tx-ops
-               ([:xtdb.api/fn
-                 :my-tx-fn
-                 #:xtdb.api{:tx-ops
-                            ([:xtdb.api/put {:value "a", :xt/id 3}]
-                             [:xtdb.api/put {:value "b", :xt/id 4}])}])}
-    #:xtdb.api{:tx-id 7,
-               :tx-time #inst "2025-11-11T16:31:07.648-00:00",
-               :tx-ops
-               ([:xtdb.api/put
-                 {:value "a", :xt/id 5}
-                 #inst "2025-01-01T01:00:00.000-00:00"
-                 #inst "2025-02-02T02:00:00.000-00:00"])}
-    #:xtdb.api{:tx-id 8,
-               :tx-time #inst "2025-11-11T16:31:07.650-00:00",
-               :tx-ops ([:xtdb.api/delete 5])}
-    #:xtdb.api{:tx-id 9,
-               :tx-time #inst "2025-11-11T16:31:07.652-00:00",
-               :tx-ops
-               ([:xtdb.api/delete
-                 5
-                 #inst "2024-01-01T01:00:00.000-00:00"
-                 #inst "2026-02-02T02:00:00.000-00:00"])}
-    #:xtdb.api{:tx-id 10,
-               :tx-time #inst "2025-11-11T16:31:07.655-00:00",
-               :tx-ops
-               ([:xtdb.api/put
-                 {:value "a", :xt/id 6}
-                 #inst "2030-01-01T01:00:00.000-00:00"
-                 #inst "2030-02-02T02:00:00.000-00:00"])}
-    #:xtdb.api{:tx-id 11,
-               :tx-time #inst "2025-11-11T16:31:07.656-00:00",
-               :tx-ops ([:xtdb.api/delete 6])}
-    #:xtdb.api{:tx-id 12,
-               :tx-time #inst "2025-11-11T16:31:07.659-00:00",
-               :tx-ops
-               ([:xtdb.api/put {:xtdb.api/evicted? true, :xt/id nil}])}
-    #:xtdb.api{:tx-id 13,
-               :tx-time #inst "2025-11-11T16:31:07.660-00:00",
-               :tx-ops ([:xtdb.api/delete nil])}
-    #:xtdb.api{:tx-id 14,
-               :tx-time #inst "2025-11-11T16:31:07.662-00:00",
-               :tx-ops ([:xtdb.api/evict nil])}]
 
-  (xt2-ops {:doc->table (constantly :stuff)
-            :id->table {}
-            :xt1-txes xt1-txes})
-  ;; =>
-  {:tx-ops
-   [[:put-docs
-     :stuff
-     {:value "a",
-      :xt/id 1,
-      :xt/valid-from #inst "2025-11-11T16:31:07.619-00:00"}]
-    [:put-docs
-     :stuff
-     {:value "b",
-      :xt/id 1,
-      :xt/valid-from #inst "2025-11-11T16:31:07.623-00:00"}]
-    [:delete-docs
-     {:from :stuff, :xt/valid-from #inst "2025-11-11T16:31:07.626-00:00"}
-     1]
-    [:put-docs
-     :stuff
-     {:value "a",
-      :xt/id 3,
-      :xt/valid-from #inst "2025-11-11T16:31:07.642-00:00"}]
-    [:put-docs
-     :stuff
-     {:value "b",
-      :xt/id 4,
-      :xt/valid-from #inst "2025-11-11T16:31:07.642-00:00"}]
-    [:put-docs
-     :stuff
-     {:value "a",
-      :xt/id 5,
-      :xt/valid-from #inst "2025-01-01T01:00:00.000-00:00",
-      :xt/valid-to #inst "2025-02-02T02:00:00.000-00:00"}]
-    [:delete-docs
-     {:from :stuff, :xt/valid-from #inst "2025-11-11T16:31:07.650-00:00"}
-     5]
-    [:delete-docs
-     {:from :stuff,
-      :xt/valid-from #inst "2024-01-01T01:00:00.000-00:00",
-      :xt/valid-to #inst "2026-02-02T02:00:00.000-00:00"}
-     5]
-    [:put-docs
-     :stuff
-     {:value "a",
-      :xt/id 6,
-      :xt/valid-from #inst "2030-01-01T01:00:00.000-00:00",
-      :xt/valid-to #inst "2030-02-02T02:00:00.000-00:00"}]
-    [:delete-docs
-     {:from :stuff, :xt/valid-from #inst "2025-11-11T16:31:07.656-00:00"}
-     6]],
-   :id->table {1 :stuff, 3 :stuff, 4 :stuff, 5 :stuff, 6 :stuff}}
+
+  (->> (file-seq (io/file "storage/migrate-export-txes"))
+       (filter #(.isFile %))
+       (mapcat nippy/thaw-from-file)
+       ;(keep (comp :into second))
+       ;frequencies
+       (filter (fn [[op opts & docs]]
+                 (#{:reclist :skip} (:into opts))))
+       )
 
   )
-

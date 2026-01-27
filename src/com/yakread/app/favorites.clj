@@ -17,17 +17,32 @@
   [{:session/user
     [{:user/favorites [:item/id
                        :item/ui-small-card
-                       {:item/user-item [:user-item/favorited-at]}]}]}]
+                       {:item/user-item [:user-item/favorited-at]}]}
+     :user/more-favorites]}]
 
   :get
-  (fn [_ {{:user/keys [favorites]} :session/user}]
-    (if (empty? favorites)
+  (fn [_ {{:user/keys [favorites more-favorites]} :session/user}]
+    (cond
+      (not-empty favorites)
+      [:<>
+       (ui/card-grid
+        {:ui/cols 4}
+        (->> favorites
+             (sort-by (comp :user-item/favorited-at :item/user-item) #(compare %2 %1))
+             (mapv :item/ui-small-card)))
+       (when more-favorites
+         [:<>
+          [:.h-4]
+          (ui/lazy-load-spaced
+           (href page-content {:pathom-params
+                               {:user/favorites
+                                {:before (get-in (peek favorites)
+                                                 [:item/user-item :user-item/favorited-at])}}}))])]
+
+      (empty? favorites)
       (empty-state)
-      (ui/card-grid
-       {:ui/cols 4}
-       (->> favorites
-            (sort-by (comp :user-item/favorited-at :item/user-item) #(compare %2 %1))
-            (mapv :item/ui-small-card))))))
+
+      :else [:<>])))
 
 (fx/defroute-pathom page "/favorites"
   [:app.shell/app-shell (? :user/current)]

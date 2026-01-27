@@ -10,7 +10,8 @@
    [com.yakread.lib.spark :as lib.spark]))
 
 (defn retrain [{:keys [yakread/model] :as ctx}]
-  (reset! model (lib.spark/new-model ctx)))
+  ;; TODO
+  #_(reset! model (lib.spark/new-model ctx)))
 
 (fx/defmachine add-candidate!
   (lib.item/add-item-machine*

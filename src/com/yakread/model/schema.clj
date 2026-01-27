@@ -180,8 +180,8 @@
                 [:bulk-send/sent-at                    ::zdt]
                 [:bulk-send/payload-size               :int]
                 [:bulk-send/mailersend-id              :string]
-                ;; migrate to :digest/bulk-send
-                #_[:bulk-send/digests      (r :digest) [:vector :uuid]])
+                ;; DEPRECATED: use :digest/bulk-send instead
+                [:bulk-send/digests      (r :digest) [:vector :uuid]])
 
    ;; When the user clicks on item in For You, any previous items they scrolled past get added to a
    ;; :skip document.

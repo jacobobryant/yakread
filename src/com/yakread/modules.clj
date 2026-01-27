@@ -27,6 +27,7 @@
   [com.yakread.model.feed]
   [com.yakread.model.item]
   [com.yakread.model.moderation]
+  [com.yakread.model.old-schema]
   [com.yakread.model.params]
   [com.yakread.model.recommend]
   [com.yakread.model.schema]
@@ -72,6 +73,7 @@
   com.yakread.model.feed/module
   com.yakread.model.item/module
   com.yakread.model.moderation/module
+  com.yakread.model.old-schema/module
   com.yakread.model.params/module
   com.yakread.model.recommend/module
   com.yakread.model.schema/module

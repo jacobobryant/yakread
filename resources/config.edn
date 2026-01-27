@@ -29,6 +29,17 @@
  :biff/jwt-secret #biff/secret JWT_SECRET
  :biff/port 8080
 
+ ;:biff.xtdb2/storage   #profile {:prod :remote :dev :local}
+ :biff.xtdb2/storage            :remote
+ ;:biff.xtdb2/log                :local
+ :biff.xtdb2/log                :kafka
+ :biff.xtdb2.log/topic          #biff/env XTDB_LOG_TOPIC
+ :biff.xtdb2.storage/max-cache-bytes nil
+ :biff.xtdb2.storage/bucket     #biff/env XTDB_STORAGE_BUCKET
+ :biff.xtdb2.storage/endpoint   #biff/env XTDB_STORAGE_ENDPOINT
+ :biff.xtdb2.storage/access-key #biff/env XTDB_STORAGE_ACCESS_KEY
+ :biff.xtdb2.storage/secret-key #biff/secret XTDB_STORAGE_SECRET_KEY
+
  :mailersend/api-key  #profile {:prod #biff/secret MAILERSEND_API_KEY}
  :mailersend/from     #biff/env MAILERSEND_FROM
  :mailersend/reply-to #biff/env MAILERSEND_REPLY_TO

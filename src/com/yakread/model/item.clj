@@ -15,23 +15,54 @@
    (com.vdurmont.emoji EmojiParser)
    (org.jsoup Jsoup)))
 
-(defresolver user-favorites [{:keys [biff/conn]} {:keys [user/id]}]
-  #::pco{:output [{:user/favorites [:item/id]}]}
-  {:user/favorites (biffx/q conn
-                            {:select [[:user-item/item :item/id]]
-                             :from :user-item
-                             :where [:and
-                                     [:= :user-item/user id]
-                                     [:is-not :user-item/favorited-at nil]]})})
+(defresolver user-favorites [{:keys [biff/conn biff/now params]} {:keys [user/id]}]
+  #::pco{:output [{:user/favorites [:item/id
+                                    {:item/user-item [:xt/id]}]}
+                  :user/more-favorites]}
+  (let [{:keys [before]} (get-in params [:pathom-params :user/bookmarks])
+        before (if (tick/zoned-date-time? before)
+                 before
+                 now)
+        page-size 200
+        results (into []
+                      (map (fn [{:keys [xt/id user-item/item]}]
+                             {:item/id item
+                              :item/user-item {:xt/id id}}))
+                      (biffx/q conn
+                               {:select [:xt/id :user-item/item]
+                                :from :user-item
+                                :where [:and
+                                        [:= :user-item/user id]
+                                        [:< :user-item/favorited-at before]]
+                                :order-by [[:user-item/favorited-at :desc]]
+                                :limit page-size}))]
 
-(defresolver user-bookmarks [{:keys [biff/conn]} {:keys [user/id]}]
-  #::pco{:output [{:user/bookmarks [:item/id]}]}
-  {:user/bookmarks (biffx/q conn
-                            {:select [[:user-item/item :item/id]]
-                             :from :user-item
-                             :where [:and
-                                     [:= :user-item/user id]
-                                     [:is-not :user-item/bookmarked-at nil]]})})
+    {:user/favorites results
+     :user/more-favorites (= page-size (count results))}))
+
+(defresolver user-bookmarks [{:keys [biff/conn biff/now params]} {:keys [user/id]}]
+  #::pco{:output [{:user/bookmarks [:item/id
+                                    {:item/user-item [:xt/id]}]}
+                  :user/more-bookmarks]}
+  (let [{:keys [before]} (get-in params [:pathom-params :user/bookmarks])
+        before (if (tick/zoned-date-time? before)
+                 before
+                 now)
+        page-size 200
+        results (into []
+                      (map (fn [{:keys [xt/id user-item/item]}]
+                             {:item/id item
+                              :item/user-item {:xt/id id}}))
+                      (biffx/q conn
+                               {:select [:xt/id :user-item/item]
+                                :from :user-item
+                                :where [:and
+                                        [:= :user-item/user id]
+                                        [:< :user-item/bookmarked-at before]]
+                                :order-by [[:user-item/bookmarked-at :desc]]
+                                :limit page-size}))]
+    {:user/bookmarks results
+     :user/more-bookmarks (= page-size (count results))}))
 
 (defresolver unread-bookmarks [{:user/keys [bookmarks]}]
   #::pco{:input [{:user/bookmarks [:item/id
@@ -62,15 +93,15 @@
   #::pco{:input [:xt/id]
          :output [{:item/user-item [:xt/id]}]
          :batch? true}
-  (let [results (into []
-                      (map (fn [{:keys [xt/id user-item/item]}]
-                             {:xt/id item :item/user-item {:xt/id id}}))
+  (let [item-ids (into #{} (map :xt/id items))
+        results (into []
+                      (keep (fn [{:keys [xt/id user-item/item]}]
+                             (when (item-ids item)
+                               {:xt/id item :item/user-item {:xt/id id}})))
                       (biffx/q conn
                                {:select [:xt/id :user-item/item]
                                 :from :user-item
-                                :where [:and
-                                        [:= :user-item/user (:uid session)]
-                                        [:in :user-item/item (mapv :xt/id items)]]}))]
+                                :where [:= :user-item/user (:uid session)]}))]
     (lib.core/restore-order items :xt/id results)))
 
 (defresolver image-from-feed [{:keys [biff/conn]} items]
@@ -189,11 +220,14 @@
                                        {(? :item/sub) [:xt/id
                                                        :sub/user]}
                                        {(? :item/user-item) [:xt/id]}]}]
-         :output [{:params/item [:xt/id]}]}
+         :output [{:params/item [:xt/id
+                                 {:item/sub [:xt/id
+                                             :sub/user]}
+                                 {:item/user-item [:xt/id]}]}]}
   (when (or (= (:uid session) (get-in item-unsafe [:item/sub :sub/user :xt/id]))
             (not-empty (:item/user-item item-unsafe))
             (contains? item-candidate-ids (:xt/id item-unsafe)))
-    {:params/item {:xt/id (:xt/id item-unsafe)}}))
+    {:params/item item-unsafe}))
 
 (defresolver item-id [{:keys [xt/id item/ingested-at]}]
   {:item/id id})

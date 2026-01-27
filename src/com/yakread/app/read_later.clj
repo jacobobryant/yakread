@@ -17,17 +17,32 @@
   [{:session/user
     [{:user/bookmarks [:item/id
                        :item/ui-small-card
-                       {:item/user-item [:user-item/bookmarked-at]}]}]}]
+                       {:item/user-item [:user-item/bookmarked-at]}]}
+     :user/more-bookmarks]}]
 
   :get
-  (fn [_ {{:user/keys [bookmarks]} :session/user}]
-    (if (empty? bookmarks)
-      (empty-state)
+  (fn [{:keys [params]} {{:user/keys [bookmarks more-bookmarks]} :session/user}]
+    (cond
+      (not-empty bookmarks)
+      [:<>
       (ui/card-grid
-       {:ui/cols 4}
-       (->> bookmarks
-            (sort-by (comp :user-item/bookmarked-at :item/user-item) #(compare %2 %1))
-            (mapv :item/ui-small-card))))))
+        {:ui/cols 4}
+        (->> bookmarks
+             (sort-by (comp :user-item/bookmarked-at :item/user-item) #(compare %2 %1))
+             (mapv :item/ui-small-card)))
+       (when more-bookmarks
+         [:<>
+          [:.h-4]
+          (ui/lazy-load-spaced
+           (href page-content {:pathom-params
+                               {:user/bookmarks
+                                {:before (get-in (peek bookmarks)
+                                                 [:item/user-item :user-item/bookmarked-at])}}}))])]
+
+      (nil? (get-in params [:pathom-params :user/bookmarks]))
+      (empty-state)
+
+      :else [:<>])))
 
 (fx/defroute-pathom page "/read-later"
   [:app.shell/app-shell (? :user/current)]

@@ -159,7 +159,7 @@
   [biff/use-aero-config
    use-error-reporting
    biffx/use-xtdb2
-   lib.spark/use-spark
+   ;lib.spark/use-spark
    biff/use-queues
    biffx/use-xtdb2-listener
    biff/use-jetty

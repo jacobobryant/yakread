@@ -172,7 +172,7 @@
 
   :record-bulk-send
   (fn [{:keys [biff/now ::digest-ids ::payload-size biff.fx/http]}]
-    (let [bulk-send-id (gen/uuid)]
+    (let [bulk-send-id (biffs/gen-uuid)]
       [{:biff.fx/tx [[:put-docs :bulk-send
                       {:xt/id bulk-send-id
                        :bulk-send/sent-at now

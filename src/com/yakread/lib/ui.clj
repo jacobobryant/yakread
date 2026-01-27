@@ -171,7 +171,7 @@
 
 (defn confirm-unsub-msg [title]
   (str "Unsubscribe from "
-       (-> title str/trim (str/replace #"\s+" " "))
+       (-> (or title "this publication") str/trim (str/replace #"\s+" " "))
        "?"))
 
 (defn muted-link [opts & body]

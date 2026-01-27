@@ -149,11 +149,11 @@
                                                        (some #(not (contains? input %))
                                                              missing-columns))
                                                      inputs)
-                          query-results (when (not-empty incomplete-inputs)
-                                          (biffx/q conn
-                                                   {:select (vec (conj missing-columns :xt/id))
+                          query {:select (vec (conj missing-columns :xt/id))
                                                     :from schema
-                                                    :where [:in :xt/id (mapv :xt/id incomplete-inputs)]}))
+                                                    :where [:in :xt/id (mapv :xt/id incomplete-inputs)]}
+                          query-results (when (not-empty incomplete-inputs)
+                                          (biffx/q conn query))
                           nil-map (zipmap missing-columns (repeat nil))
                           update-cache (fn [cache-value]
                                          (reduce (fn [cache-value record]

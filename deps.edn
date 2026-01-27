@@ -1,14 +1,15 @@
 {:paths ["src" "resources" "target/resources" "target/classes"]
  :deps {com.biffweb/biff                    {:git/url "https://github.com/jacobobryant/biff"
-                                             :git/sha "ea2657218deb72ff39ec6ec331c3eebde4c69ce3"
-                                             ;:local/root "/home/jacob/dev/biff"
+                                             :git/sha "0e1e207df27acb1758ec3604eb56af50b7bb47ea"
+                                             :local/root "/home/jacob/dev/biff"
                                              :exclusions [com.xtdb/xtdb-core
                                                           com.xtdb/xtdb-jdbc
                                                           com.xtdb/xtdb-rocksdb
                                                           org.postgresql/postgresql]}
-        com.xtdb/xtdb-api                   {:mvn/version "2.1.0-rc0"}
-        com.xtdb/xtdb-aws                   {:mvn/version "2.1.0-rc0"}
-        com.xtdb/xtdb-core                  {:mvn/version "2.1.0-rc0"}
+        com.xtdb/xtdb-api                   {:mvn/version "2.x-20260126.180359-1"}
+        com.xtdb/xtdb-core                  {:mvn/version "2.x-20260126.180359-1"}
+        com.xtdb/xtdb-aws                   {:mvn/version "2.x-20260126.180359-1"}
+        com.xtdb/xtdb-kafka                 {:mvn/version "2.x-20260126.180359-1"}
         com.zaxxer/HikariCP                 {:mvn/version "7.0.2"}
 
         vouch-opensource/fugato             {:git/url "https://github.com/vouch-opensource/fugato"
@@ -71,6 +72,7 @@
         :extra-paths ["dev" "test"]
         :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                    "-Dio.netty.tryReflectionSetAccessible=true"
+                   "-Djdk.attach.allowAttachSelf"
                    "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
                    "--add-exports=java.base/sun.security.action=ALL-UNNAMED"
                    "-XX:-OmitStackTraceInFastThrow"
@@ -80,6 +82,7 @@
   :prod {:jvm-opts ["-Xmx32g" ; TODO move this out of source control somehow
                     "--add-opens=java.base/java.nio=ALL-UNNAMED"
                     "-Dio.netty.tryReflectionSetAccessible=true"
+                    "-Djdk.attach.allowAttachSelf"
                     "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED"
                     "--add-exports=java.base/sun.security.action=ALL-UNNAMED"
                     "-XX:-OmitStackTraceInFastThrow"
@@ -91,8 +94,8 @@
            :jvm-opts ["--add-opens=java.base/java.nio=ALL-UNNAMED"
                       "-Dio.netty.tryReflectionSetAccessible=true"
                       "-Dbiff.env.BIFF_PROFILE=prod"]
-           :main-opts ["-m" "tasks.migrate-xt"]}
-  :mvn/repos
-  {"central"            {:url "https://repo1.maven.org/maven2/"}
-   "clojars"            {:url "https://clojars.org/repo"}
-   "sonatype-snapshots" {:url "https://central.sonatype.com/repository/maven-snapshots/"}}}}
+           :main-opts ["-m" "tasks.migrate-xt"]}}
+ :mvn/repos
+ {"central"         {:url "https://repo1.maven.org/maven2/"}
+  "clojars"         {:url "https://clojars.org/repo"}
+  "sonatype-snapshots" {:url "https://central.sonatype.com/repository/maven-snapshots/"}}}
