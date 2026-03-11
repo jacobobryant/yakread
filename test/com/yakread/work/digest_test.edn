@@ -259,5 +259,6 @@
         :bulk-send/payload-size 11,
         :bulk-send/mailersend-id "abc123",
         :bulk-send/digests ["digest1" "digest2"]}]}
-     {:biff.pipe/current :biff.pipe/sleep, :biff.pipe.sleep/ms 5000}]}}
+     {:biff.pipe/current :biff.pipe/sleep,
+      :biff.pipe.sleep/ms 23000/3}]}}
   _]}

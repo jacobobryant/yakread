@@ -36,7 +36,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: ${{ env.JAVA_VERSION }}
-          cache: 'maven'
 
       - name: Install Clojure CLI tools
         uses: DeLaGuardo/setup-clojure@12.5
